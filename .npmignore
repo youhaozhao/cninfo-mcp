@@ -1,0 +1,59 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.ruff_cache/
+*.log
+
+# Local files (user-specific)
+*.local
+.env
+.env.local
+
+# Keep source files
+!python/
+!bin/
+!lib/
+!scripts/
+
+# Documentation (keep README, ignore others)
+*.md
+!README.md
+
+# Keep license
+!LICENSE
+
+# Ignore PDFs and test data
+pdf/
+txt/
+xls/
+test_*.py
+verify_*.py
+quick_start.py
+extract_text.js
+pdf2txt.py
+main.py

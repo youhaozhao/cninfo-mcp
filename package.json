@@ -1,0 +1,51 @@
+{
+  "name": "@youhaozhao/cninfo-mcp",
+  "version": "1.0.3",
+  "description": "MCP Server for querying and downloading Chinese listed companies' annual reports from CNINFO (巨潮资讯网)",
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "cninfo",
+    "chinese-stock",
+    "annual-reports",
+    "finance",
+    "python"
+  ],
+  "homepage": "https://github.com/youhaozhao/cninfo_mcp#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/youhaozhao/cninfo_mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/youhaozhao/cninfo_mcp/issues"
+  },
+  "bin": {
+    "cninfo-mcp": "bin/cninfo-mcp.js"
+  },
+  "scripts": {
+    "postinstall": "node scripts/install-python-deps.js",
+    "start": "node bin/cninfo-mcp.js",
+    "dev": "node bin/cninfo-mcp.js",
+    "test": "echo \"No tests configured\""
+  },
+  "dependencies": {
+    "spawn-please": "^2.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "files": [
+    "bin/",
+    "python/",
+    "scripts/",
+    "README.md"
+  ]
+}

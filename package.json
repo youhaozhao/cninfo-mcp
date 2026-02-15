@@ -19,6 +19,7 @@
   "bugs": {
     "url": "https://github.com/youhaozhao/cninfo_mcp/issues"
   },
+  "license": "MIT",
   "bin": {
     "cninfo-mcp": "bin/cninfo-mcp.js"
   },
@@ -46,6 +47,7 @@
     "bin/",
     "python/",
     "scripts/",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ]
 }

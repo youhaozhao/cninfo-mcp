@@ -1,5 +1,7 @@
 # cninfo-mcp
 
+[![npm version](https://img.shields.io/npm/v/@youhaozhao/cninfo-mcp)](https://www.npmjs.com/package/@youhaozhao/cninfo-mcp)
+
 通过 MCP 协议查询和下载巨潮资讯网上市公司年报的工具，适用于 Claude Desktop。
 
 ## 使用方法

@@ -11,13 +11,13 @@
     "finance",
     "python"
   ],
-  "homepage": "https://github.com/youhaozhao/cninfo_mcp#readme",
+  "homepage": "https://github.com/youhaozhao/cninfo-mcp#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/youhaozhao/cninfo_mcp.git"
+    "url": "git+https://github.com/youhaozhao/cninfo-mcp.git"
   },
   "bugs": {
-    "url": "https://github.com/youhaozhao/cninfo_mcp/issues"
+    "url": "https://github.com/youhaozhao/cninfo-mcp/issues"
   },
   "license": "MIT",
   "bin": {

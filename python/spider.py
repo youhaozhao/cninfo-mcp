@@ -170,6 +170,7 @@ def Download(single_page, year_filter=None, save_path=None):
     ]
 
     output_dir = (save_path or saving_path).rstrip("/") + "/"
+    downloaded_count = 0
 
     for i in single_page:
         title = i["announcementTitle"]
@@ -219,10 +220,11 @@ def Download(single_page, year_filter=None, save_path=None):
             f = open(file_path, "wb")
             f.write(r.content)
             f.close()
+            downloaded_count += 1
         else:
             continue
 
-    return True
+    return downloaded_count
 
 
 def query_prospectus(stock_code):
@@ -262,12 +264,12 @@ def download_prospectus(stock_code, save_path=None):
         }
 
     output_dir = save_path or saving_path
-    result = Download(announcements, save_path=output_dir)
+    count = Download(announcements, save_path=output_dir)
 
     return {
-        "success": result,
+        "success": count is not None and count > 0,
         "message": f"已下载 {stock_code} 招股书",
-        "downloaded": len(announcements),
+        "downloaded": count or 0,
         "path": output_dir,
     }
 
@@ -315,13 +317,13 @@ def download_annual_reports(stock_code, year=None, save_path=None):
         }
 
     output_dir = save_path or saving_path
-    result = Download(announcements, year_filter=year, save_path=output_dir)
+    count = Download(announcements, year_filter=year, save_path=output_dir)
 
     return {
-        "success": result,
+        "success": count is not None and count > 0,
         "message": f"已下载 {stock_code} 年度报告"
         + (f"（{year} 年）" if year else ""),
-        "downloaded": len(announcements),
+        "downloaded": count or 0,
         "path": output_dir,
     }
 

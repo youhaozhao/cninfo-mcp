@@ -2,6 +2,7 @@
 从巨潮资讯下载年度报告和招股书
 """
 
+import datetime
 import os
 import random
 import time
@@ -158,8 +159,9 @@ def Download(single_page, year_filter=None, save_path=None):
             f"{year_filter}年年度报告",
         ]
     else:
-        # 默认下载 2015-2025 年
-        for year in range(2015, 2026):
+        # 默认下载 2015 年至当前年份
+        current_year = datetime.datetime.now().year
+        for year in range(2015, current_year + 1):
             allowed_list.append(f"{year}年年度报告（更新后）")
             allowed_list.append(f"{year}年年度报告")
 

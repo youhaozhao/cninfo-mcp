@@ -158,8 +158,8 @@ def Download(single_page, year_filter=None, save_path=None):
             f"{year_filter}年年度报告",
         ]
     else:
-        # 默认下载 2016-2025 年
-        for year in range(2016, 2026):
+        # 默认下载 2015-2025 年
+        for year in range(2015, 2026):
             allowed_list.append(f"{year}年年度报告（更新后）")
             allowed_list.append(f"{year}年年度报告")
 

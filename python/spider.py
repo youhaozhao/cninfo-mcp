@@ -266,10 +266,13 @@ def download_prospectus(stock_code, save_path=None):
     output_dir = save_path or saving_path
     count = Download(announcements, save_path=output_dir)
 
+    downloaded = count or 0
     return {
-        "success": count is not None and count > 0,
-        "message": f"已下载 {stock_code} 招股书",
-        "downloaded": count or 0,
+        "success": downloaded > 0,
+        "message": f"已下载 {stock_code} 招股书，共 {downloaded} 个文件"
+        if downloaded > 0
+        else f"未下载任何文件（{stock_code} 招股书）",
+        "downloaded": downloaded,
         "path": output_dir,
     }
 
@@ -319,11 +322,14 @@ def download_annual_reports(stock_code, year=None, save_path=None):
     output_dir = save_path or saving_path
     count = Download(announcements, year_filter=year, save_path=output_dir)
 
+    downloaded = count or 0
+    year_suffix = f"（{year} 年）" if year else ""
     return {
-        "success": count is not None and count > 0,
-        "message": f"已下载 {stock_code} 年度报告"
-        + (f"（{year} 年）" if year else ""),
-        "downloaded": count or 0,
+        "success": downloaded > 0,
+        "message": f"已下载 {stock_code} 年度报告{year_suffix}，共 {downloaded} 个文件"
+        if downloaded > 0
+        else f"未下载任何文件（{stock_code} 年度报告{year_suffix}）",
+        "downloaded": downloaded,
         "path": output_dir,
     }
 

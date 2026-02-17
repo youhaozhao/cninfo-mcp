@@ -59,15 +59,17 @@ def query_annual_reports_tool(stock_code: str, year: Optional[int] = None) -> di
             }
 
         # 提取关键字段
+        base_url = "https://static.cninfo.com.cn/"
         report_details = []
         for report in reports:
+            adj = report.get("adjunctUrl", "")
             report_details.append(
                 {
                     "announcementTitle": report.get("announcementTitle", ""),
                     "announcementTime": report.get("announcementTime", ""),
                     "secCode": report.get("secCode", ""),
                     "secName": report.get("secName", ""),
-                    "adjunctUrl": report.get("adjunctUrl", ""),
+                    "adjunctUrl": base_url + adj if adj else "",
                 }
             )
 
@@ -161,13 +163,14 @@ def query_prospectus_tool(stock_code: str) -> dict:
                 "message": f"No prospectus found for stock {stock_code}",
             }
 
+        base_url = "https://static.cninfo.com.cn/"
         report_details = [
             {
                 "announcementTitle": r.get("announcementTitle", ""),
                 "announcementTime": r.get("announcementTime", ""),
                 "secCode": r.get("secCode", ""),
                 "secName": r.get("secName", ""),
-                "adjunctUrl": r.get("adjunctUrl", ""),
+                "adjunctUrl": base_url + r.get("adjunctUrl", "") if r.get("adjunctUrl") else "",
             }
             for r in reports
         ]

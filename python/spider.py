@@ -174,14 +174,14 @@ def Download(single_page, year_filter=None, save_path=None):
     for i in single_page:
         title = i["announcementTitle"]
 
-        # 跳过确认意见等非正式报告
-        if "确认意见" in title or "取消" in title:
+        # 跳过确认意见、取消公告、摘要等非正文文件
+        if "确认意见" in title or "取消" in title or "摘要" in title:
             continue
 
-        # 检查标题是否包含允许的文本
+        # 检查标题是否精确匹配（避免"摘要"等变体被误下载）
         allowed = False
         for item in allowed_list:
-            if item in title:
+            if title == item:
                 allowed = True
                 break
 

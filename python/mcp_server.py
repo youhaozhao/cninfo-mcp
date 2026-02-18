@@ -96,7 +96,9 @@ def query_annual_reports_tool(stock_code: str, year: Optional[int] = None) -> di
 
 
 @mcp.tool()
-def download_annual_reports_tool(stock_code: str, year: Optional[int] = None, save_path: Optional[str] = None) -> dict:
+def download_annual_reports_tool(
+    stock_code: str, year: Optional[int] = None, save_path: Optional[str] = None
+) -> dict:
     """
     Download annual reports for a Chinese listed company
 
@@ -170,7 +172,9 @@ def query_prospectus_tool(stock_code: str) -> dict:
                 "announcementTime": r.get("announcementTime", ""),
                 "secCode": r.get("secCode", ""),
                 "secName": r.get("secName", ""),
-                "adjunctUrl": base_url + r.get("adjunctUrl", "") if r.get("adjunctUrl") else "",
+                "adjunctUrl": base_url + r.get("adjunctUrl", "")
+                if r.get("adjunctUrl")
+                else "",
             }
             for r in reports
         ]

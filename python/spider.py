@@ -3,9 +3,12 @@
 """
 
 import datetime
+import logging
 import os
 import random
+import re
 import time
+from typing import Optional, Union
 
 import requests
 
@@ -13,6 +16,7 @@ download_path = "https://static.cninfo.com.cn/"
 # 使用脚本所在目录的相对路径
 _saving_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pdf")
 saving_path = _saving_path + "/"
+logger = logging.getLogger(__name__)
 
 User_Agent = [
     "Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; Win64; x64; Trident/5.0; .NET CLR 3.5.30729; .NET CLR 3.0.30729; .NET CLR 2.0.50727; Media Center PC 6.0)",
@@ -25,7 +29,7 @@ User_Agent = [
 ]
 
 
-headers = {
+BASE_HEADERS = {
     "Accept": "application/json, text/javascript, */*; q=0.01",
     "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
     "Accept-Encoding": "gzip, deflate",
@@ -37,10 +41,64 @@ headers = {
 }
 
 
+def _build_headers() -> dict:
+    """构造请求头，避免在并发场景下修改全局字典。"""
+    headers = BASE_HEADERS.copy()
+    headers["User-Agent"] = random.choice(User_Agent)
+    return headers
+
+
+def _date_range(start_date: str) -> str:
+    """构造查询时间区间，结束日期取当天，避免硬编码过期。"""
+    datetime.datetime.strptime(start_date, "%Y-%m-%d")
+    today = datetime.date.today().strftime("%Y-%m-%d")
+    return f"{start_date}~{today}"
+
+
+def _is_annual_report_title(
+    title: str, year_filter: Optional[Union[int, str]] = None
+) -> bool:
+    """
+    判断标题是否为“年度报告正文”。
+
+    支持常见变体：
+    - 2024年年度报告
+    - 2024年度报告
+    - 2024年报
+    """
+    compact_title = re.sub(r"\s+", "", title or "")
+
+    # 非正文公告关键词过滤
+    exclude_keywords = [
+        "摘要",
+        "确认意见",
+        "取消",
+        "更正",
+        "补充",
+        "说明",
+        "提示",
+        "致歉",
+        "修订",
+        "英文",
+    ]
+    if any(keyword in compact_title for keyword in exclude_keywords):
+        return False
+
+    year_expr = re.escape(str(year_filter)) if year_filter is not None else r"\d{4}"
+    suffix_expr = r"(?:[（(]更新后[)）])?"
+    patterns = [
+        rf".*{year_expr}年年度报告{suffix_expr}",
+        rf".*{year_expr}年度报告{suffix_expr}",
+    ]
+    if year_filter is not None:
+        patterns.append(rf".*{year_expr}年报{suffix_expr}")
+
+    return any(re.fullmatch(pattern, compact_title) for pattern in patterns)
+
+
 # 深市 年度报告
 def szseAnnual(page, stock):
     query_path = "http://www.cninfo.com.cn/new/hisAnnouncement/query"
-    headers["User-Agent"] = random.choice(User_Agent)  # 定义User_Agent
     query = {
         "pageNum": page,  # 页码
         "pageSize": 30,
@@ -52,10 +110,12 @@ def szseAnnual(page, stock):
         "plate": "sz",
         "category": "category_ndbg_szsh",  # 年度报告
         "trade": "",
-        "seDate": "2020-01-01~2026-02-15",  # 时间区间
+        "seDate": _date_range("2020-01-01"),  # 时间区间
     }
 
-    namelist = requests.post(query_path, headers=headers, data=query)
+    namelist = requests.post(
+        query_path, headers=_build_headers(), data=query, timeout=30
+    )
     result = namelist.json()
     if result and "announcements" in result and result["announcements"]:
         return result["announcements"]
@@ -65,7 +125,6 @@ def szseAnnual(page, stock):
 # 沪市 年度报告
 def sseAnnual(page, stock):
     query_path = "http://www.cninfo.com.cn/new/hisAnnouncement/query"
-    headers["User-Agent"] = random.choice(User_Agent)  # 定义User_Agent
     query = {
         "pageNum": page,  # 页码
         "pageSize": 30,
@@ -77,10 +136,12 @@ def sseAnnual(page, stock):
         "plate": "sh",
         "category": "category_ndbg_szsh",  # 年度报告
         "trade": "",
-        "seDate": "2020-01-01~2026-02-15",  # 时间区间
+        "seDate": _date_range("2020-01-01"),  # 时间区间
     }
 
-    namelist = requests.post(query_path, headers=headers, data=query)
+    namelist = requests.post(
+        query_path, headers=_build_headers(), data=query, timeout=30
+    )
     result = namelist.json()
     if result and "announcements" in result and result["announcements"]:
         return result["announcements"]
@@ -90,7 +151,6 @@ def sseAnnual(page, stock):
 # 深市 招股
 def szseStock(page, stock):
     query_path = "http://www.cninfo.com.cn/new/hisAnnouncement/query"
-    headers["User-Agent"] = random.choice(User_Agent)  # 定义User_Agent
     query = {
         "pageNum": page,  # 页码
         "pageSize": 30,
@@ -102,10 +162,12 @@ def szseStock(page, stock):
         "plate": "sz",
         "category": "",
         "trade": "",
-        "seDate": "2015-01-01~2026-02-15",  # 时间区间
+        "seDate": _date_range("2015-01-01"),  # 时间区间
     }
 
-    namelist = requests.post(query_path, headers=headers, data=query)
+    namelist = requests.post(
+        query_path, headers=_build_headers(), data=query, timeout=30
+    )
     result = namelist.json()
     if result and "announcements" in result and result["announcements"]:
         return result["announcements"]
@@ -115,7 +177,6 @@ def szseStock(page, stock):
 # 沪市 招股
 def sseStock(page, stock):
     query_path = "http://www.cninfo.com.cn/new/hisAnnouncement/query"
-    headers["User-Agent"] = random.choice(User_Agent)  # 定义User_Agent
     query = {
         "pageNum": page,  # 页码
         "pageSize": 30,
@@ -127,43 +188,26 @@ def sseStock(page, stock):
         "plate": "sh",
         "category": "",
         "trade": "",
-        "seDate": "2015-01-01~2026-02-15",  # 时间区间
+        "seDate": _date_range("2015-01-01"),  # 时间区间
     }
 
-    namelist = requests.post(query_path, headers=headers, data=query)
+    namelist = requests.post(
+        query_path, headers=_build_headers(), data=query, timeout=30
+    )
     result = namelist.json()
     if result and "announcements" in result and result["announcements"]:
         return result["announcements"]
     return []
 
 
-def Download(single_page, year_filter=None, save_path=None):
+def Download(
+    single_page,
+    year_filter: Optional[Union[int, str]] = None,
+    save_path: Optional[str] = None,
+):
     """下载公告列表中的 PDF 文件"""
     if single_page is None:
         return
-
-    headers = {
-        "Accept": "application/json, text/javascript, */*; q=0.01",
-        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-        "Accept-Encoding": "gzip, deflate",
-        "Accept-Language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7,zh-HK;q=0.6,zh-TW;q=0.5",
-        "Host": "www.cninfo.com.cn",
-        "Origin": "http://www.cninfo.com.cn",
-    }
-
-    # 按年份筛选允许下载的标题
-    allowed_list = []
-    if year_filter:
-        allowed_list = [
-            f"{year_filter}年年度报告（更新后）",
-            f"{year_filter}年年度报告",
-        ]
-    else:
-        # 默认下载 2015 年至当前年份
-        current_year = datetime.datetime.now().year
-        for year in range(2015, current_year + 1):
-            allowed_list.append(f"{year}年年度报告（更新后）")
-            allowed_list.append(f"{year}年年度报告")
 
     allowed_list_2 = [
         "招股书",
@@ -181,20 +225,13 @@ def Download(single_page, year_filter=None, save_path=None):
         if "确认意见" in title or "取消" in title or "摘要" in title:
             continue
 
-        # 检查标题是否精确匹配（避免"摘要"等变体被误下载）
-        allowed = False
-        for item in allowed_list:
-            if title == item:
-                allowed = True
-                break
+        # 年报标题匹配：支持“2024年年度报告/2024年度报告/2024年报”等变体
+        is_annual_report = _is_annual_report_title(title, year_filter=year_filter)
 
         # 检查招股书
-        for item in allowed_list_2:
-            if item in title:
-                allowed = True
-                break
+        is_prospectus = any(item in title for item in allowed_list_2)
 
-        if allowed:
+        if is_annual_report or is_prospectus:
             download = download_path + i["adjunctUrl"]
             name = (
                 i["secCode"]
@@ -209,19 +246,19 @@ def Download(single_page, year_filter=None, save_path=None):
             file_path = output_dir + name
 
             # 显示下载进度
-            print(f"  ↓ {name}")
+            logger.info("↓ %s", name)
 
             # 确保目录存在
             os.makedirs(output_dir, exist_ok=True)
 
             time.sleep(random.random() * 2)
 
-            headers["User-Agent"] = random.choice(User_Agent)
-            r = requests.get(download)
-
-            f = open(file_path, "wb")
-            f.write(r.content)
-            f.close()
+            r = requests.get(
+                download, headers={"User-Agent": random.choice(User_Agent)}, timeout=30
+            )
+            r.raise_for_status()
+            with open(file_path, "wb") as f:
+                f.write(r.content)
             downloaded_count += 1
         else:
             continue
@@ -237,17 +274,18 @@ def query_prospectus(stock_code):
         announcements_sse = sseStock(1, stock_code)
         all_announcements.extend(announcements_sse)
     except Exception as e:
-        print(f"沪市招股书查询失败: {e}")
+        logger.warning("沪市招股书查询失败: %s", e)
 
     try:
         announcements_szse = szseStock(1, stock_code)
         all_announcements.extend(announcements_szse)
     except Exception as e:
-        print(f"深市招股书查询失败: {e}")
+        logger.warning("深市招股书查询失败: %s", e)
 
     prospectus_keywords = ["招股书", "招股说明书", "招股意向书"]
     filtered = [
-        a for a in all_announcements
+        a
+        for a in all_announcements
         if any(kw in a.get("announcementTitle", "") for kw in prospectus_keywords)
     ]
 
@@ -288,21 +326,30 @@ def query_annual_reports(stock_code, year=None):
         announcements_sse = sseAnnual(1, stock_code)
         all_announcements.extend(announcements_sse)
     except Exception as e:
-        print(f"沪市年报查询失败: {e}")
+        logger.warning("沪市年报查询失败: %s", e)
 
     # 查询深市
     try:
         announcements_szse = szseAnnual(1, stock_code)
         all_announcements.extend(announcements_szse)
     except Exception as e:
-        print(f"深市年报查询失败: {e}")
+        logger.warning("深市年报查询失败: %s", e)
 
     # 按年份过滤
     if year:
-        year_str = str(year)
+        year_expr = re.escape(str(year))
+        year_patterns = [
+            rf"{year_expr}年年度报告",
+            rf"{year_expr}年度报告",
+            rf"{year_expr}年报",
+        ]
         filtered = []
         for announcement in all_announcements:
-            if year_str in announcement.get("announcementTitle", ""):
+            title = re.sub(r"\s+", "", announcement.get("announcementTitle", ""))
+            # 这里故意使用宽松匹配作为“预筛选”以保留候选项。
+            # 真正的严格判定（fullmatch + 排除词）在 Download() 的
+            # _is_annual_report_title() 中执行，形成两层防线。
+            if any(re.search(pattern, title) for pattern in year_patterns):
                 filtered.append(announcement)
         all_announcements = filtered
 
@@ -337,17 +384,22 @@ def download_annual_reports(stock_code, year=None, save_path=None):
 
 
 def Run(page_number, stock):
+    annual_report = []
+    stock_report = []
+    annual_report_ = []
+    stock_report_ = []
+
     try:
         annual_report = szseAnnual(page_number, stock)
         stock_report = szseStock(page_number, stock)
         annual_report_ = sseAnnual(page_number, stock)
         stock_report_ = sseStock(page_number, stock)
     except Exception:
-        print(page_number, "page error, retrying")
+        logger.warning("%s page error, retrying", page_number)
         try:
             annual_report = szseAnnual(page_number, stock)
         except Exception:
-            print(page_number, "page error")
+            logger.warning("%s page error", page_number)
     Download(annual_report)
     Download(stock_report)
     Download(annual_report_)
@@ -355,9 +407,12 @@ def Run(page_number, stock):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
     with open("company_id.txt") as file:
         lines = file.readlines()
         for line in lines:
             stock = line
             Run(1, line)
-            print(line, "done")
+            logger.info("%s done", line.strip())

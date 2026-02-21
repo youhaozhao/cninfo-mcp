@@ -7,6 +7,7 @@
 const { spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 
 const REQUIREMENTS_FILE = path.join(
   __dirname,
@@ -14,6 +15,15 @@ const REQUIREMENTS_FILE = path.join(
   "python",
   "requirements.txt",
 );
+
+const VENV_DIR = path.join(os.homedir(), ".cninfo-mcp", "venv");
+
+function getVenvPython() {
+  if (process.platform === "win32") {
+    return path.join(VENV_DIR, "Scripts", "python.exe");
+  }
+  return path.join(VENV_DIR, "bin", "python3");
+}
 
 async function findPython() {
   const pythonCommands = [
@@ -75,16 +85,31 @@ async function main() {
     return;
   }
 
+  // 创建虚拟环境（如果不存在）
+  const venvPython = getVenvPython();
+  if (!fs.existsSync(venvPython)) {
+    console.log("Creating Python virtual environment...");
+    try {
+      fs.mkdirSync(path.dirname(VENV_DIR), { recursive: true });
+      await spawnCommand(pythonCmd, ["-m", "venv", VENV_DIR]);
+      console.log("Virtual environment created");
+    } catch (venvError) {
+      console.warn("  Failed to create virtual environment during npm install");
+      console.warn("  It will be created automatically on first run");
+      return;
+    }
+  }
+
   try {
-    // 检查 mcp 是否已安装
-    await spawnCommand(pythonCmd, ["-c", "import mcp"]);
+    // 检查 mcp 是否已安装（用 venv 的 python）
+    await spawnCommand(venvPython, ["-c", "import mcp"]);
     console.log("✅ Python dependencies already installed");
   } catch (error) {
-    // 执行安装
+    // 执行安装（用 venv 的 pip）
     console.log("📦 Installing Python dependencies...");
     try {
       await spawnCommand(
-        pythonCmd,
+        venvPython,
         ["-m", "pip", "install", "-r", REQUIREMENTS_FILE],
         {
           stdio: "inherit",

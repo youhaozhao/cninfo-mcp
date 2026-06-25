@@ -18,6 +18,13 @@ _saving_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pdf")
 saving_path = _saving_path + "/"
 logger = logging.getLogger(__name__)
 
+# 巨潮资讯历史公告的实际下限约为 2001 会计年度，再往前查询无数据返回。
+EARLIEST_DATE = "2001-01-01"
+# 接口单页最大返回条数
+PAGE_SIZE = 30
+# 翻页安全上限，防止异常情况下无限循环
+MAX_PAGES = 100
+
 User_Agent = [
     "Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; Win64; x64; Trident/5.0; .NET CLR 3.5.30729; .NET CLR 3.0.30729; .NET CLR 2.0.50727; Media Center PC 6.0)",
     "Mozilla/5.0 (compatible; MSIE 8.0; Windows NT 6.0; Trident/4.0; WOW64; Trident/4.0; SLCC2; .NET CLR 2.0.50727; .NET CLR 3.5.30729; .NET CLR 3.0.30729; .NET CLR 1.0.3705; .NET CLR 1.1.4322)",
@@ -53,6 +60,26 @@ def _date_range(start_date: str) -> str:
     datetime.datetime.strptime(start_date, "%Y-%m-%d")
     today = datetime.date.today().strftime("%Y-%m-%d")
     return f"{start_date}~{today}"
+
+
+def _paginate(fetch_fn, stock):
+    """
+    对单页查询函数翻页，汇总所有页的公告。
+
+    巨潮接口单页最多返回 PAGE_SIZE 条，放开时间区间后历史年报会跨越多页，
+    必须翻页才能取全。以“返回数量不足一页”作为终止条件，并设安全上限。
+    """
+    all_items = []
+    for page in range(1, MAX_PAGES + 1):
+        items = fetch_fn(page, stock)
+        if not items:
+            break
+        all_items.extend(items)
+        if len(items) < PAGE_SIZE:  # 不足一页说明已到最后一页
+            break
+    else:
+        logger.warning("翻页达到上限 %s，结果可能被截断（%s）", MAX_PAGES, stock)
+    return all_items
 
 
 def _is_annual_report_title(
@@ -101,7 +128,7 @@ def szseAnnual(page, stock):
     query_path = "http://www.cninfo.com.cn/new/hisAnnouncement/query"
     query = {
         "pageNum": page,  # 页码
-        "pageSize": 30,
+        "pageSize": PAGE_SIZE,
         "tabName": "fulltext",
         "column": "szse",  # 深交所
         "stock": "",
@@ -110,7 +137,7 @@ def szseAnnual(page, stock):
         "plate": "sz",
         "category": "category_ndbg_szsh",  # 年度报告
         "trade": "",
-        "seDate": _date_range("2020-01-01"),  # 时间区间
+        "seDate": _date_range(EARLIEST_DATE),  # 时间区间
     }
 
     namelist = requests.post(
@@ -127,7 +154,7 @@ def sseAnnual(page, stock):
     query_path = "http://www.cninfo.com.cn/new/hisAnnouncement/query"
     query = {
         "pageNum": page,  # 页码
-        "pageSize": 30,
+        "pageSize": PAGE_SIZE,
         "tabName": "fulltext",
         "column": "sse",
         "stock": "",
@@ -136,7 +163,7 @@ def sseAnnual(page, stock):
         "plate": "sh",
         "category": "category_ndbg_szsh",  # 年度报告
         "trade": "",
-        "seDate": _date_range("2020-01-01"),  # 时间区间
+        "seDate": _date_range(EARLIEST_DATE),  # 时间区间
     }
 
     namelist = requests.post(
@@ -153,7 +180,7 @@ def szseStock(page, stock):
     query_path = "http://www.cninfo.com.cn/new/hisAnnouncement/query"
     query = {
         "pageNum": page,  # 页码
-        "pageSize": 30,
+        "pageSize": PAGE_SIZE,
         "tabName": "fulltext",
         "column": "szse",
         "stock": "",
@@ -162,7 +189,7 @@ def szseStock(page, stock):
         "plate": "sz",
         "category": "",
         "trade": "",
-        "seDate": _date_range("2015-01-01"),  # 时间区间
+        "seDate": _date_range(EARLIEST_DATE),  # 时间区间
     }
 
     namelist = requests.post(
@@ -179,7 +206,7 @@ def sseStock(page, stock):
     query_path = "http://www.cninfo.com.cn/new/hisAnnouncement/query"
     query = {
         "pageNum": page,  # 页码
-        "pageSize": 30,
+        "pageSize": PAGE_SIZE,
         "tabName": "fulltext",
         "column": "sse",
         "stock": "",
@@ -188,7 +215,7 @@ def sseStock(page, stock):
         "plate": "sh",
         "category": "",
         "trade": "",
-        "seDate": _date_range("2015-01-01"),  # 时间区间
+        "seDate": _date_range(EARLIEST_DATE),  # 时间区间
     }
 
     namelist = requests.post(
@@ -271,13 +298,13 @@ def query_prospectus(stock_code):
     all_announcements = []
 
     try:
-        announcements_sse = sseStock(1, stock_code)
+        announcements_sse = _paginate(sseStock, stock_code)
         all_announcements.extend(announcements_sse)
     except Exception as e:
         logger.warning("沪市招股书查询失败: %s", e)
 
     try:
-        announcements_szse = szseStock(1, stock_code)
+        announcements_szse = _paginate(szseStock, stock_code)
         all_announcements.extend(announcements_szse)
     except Exception as e:
         logger.warning("深市招股书查询失败: %s", e)
@@ -323,14 +350,14 @@ def query_annual_reports(stock_code, year=None):
 
     # 查询沪市
     try:
-        announcements_sse = sseAnnual(1, stock_code)
+        announcements_sse = _paginate(sseAnnual, stock_code)
         all_announcements.extend(announcements_sse)
     except Exception as e:
         logger.warning("沪市年报查询失败: %s", e)
 
     # 查询深市
     try:
-        announcements_szse = szseAnnual(1, stock_code)
+        announcements_szse = _paginate(szseAnnual, stock_code)
         all_announcements.extend(announcements_szse)
     except Exception as e:
         logger.warning("深市年报查询失败: %s", e)

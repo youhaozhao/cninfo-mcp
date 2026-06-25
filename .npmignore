@@ -40,6 +40,11 @@ Thumbs.db
 !lib/
 !scripts/
 
+# Re-exclude Python cache that the broad !python/ rule would otherwise pull back in
+python/__pycache__/
+python/**/__pycache__/
+python/**/*.py[cod]
+
 # Documentation (keep README, ignore others)
 *.md
 !README.md

@@ -11,13 +11,15 @@
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "python"))
+sys.path.insert(
+    0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "python")
+)
 
 import spider  # noqa: E402
 
 # 各市场的稳定探测标的（均为上市多年、年报齐全的公司）
 PROBES = {
-    "沪市 SSE": ["600519", "601398"],   # 贵州茅台、工商银行
+    "沪市 SSE": ["600519", "601398"],  # 贵州茅台、工商银行
     "深市 SZSE": ["000001", "000333"],  # 平安银行、美的集团
     "北交所 BSE": ["835185", "920019"],  # 贝特瑞、铜冠矿建
 }

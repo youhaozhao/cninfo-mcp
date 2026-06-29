@@ -1,13 +1,16 @@
 {
   "name": "@youhaozhao/cninfo-mcp",
   "version": "1.2.0",
-  "description": "MCP Server for querying and downloading Chinese listed companies' annual reports from CNINFO (巨潮资讯网)",
+  "description": "MCP Server for querying and downloading Chinese listed companies' periodic reports from CNINFO (巨潮资讯网)",
   "keywords": [
     "mcp",
     "mcp-server",
     "cninfo",
     "chinese-stock",
     "annual-reports",
+    "quarterly-reports",
+    "semiannual-reports",
+    "periodic-reports",
     "finance",
     "python"
   ],
@@ -27,7 +30,7 @@
     "postinstall": "node scripts/install-python-deps.js",
     "start": "node bin/cninfo-mcp.js",
     "dev": "node bin/cninfo-mcp.js",
-    "test": "echo \"No tests configured\""
+    "test": "python3 -m pytest python/test_spider.py -q"
   },
   "dependencies": {
     "spawn-please": "^2.0.2"

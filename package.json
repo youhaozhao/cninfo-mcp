@@ -1,6 +1,6 @@
 {
   "name": "@youhaozhao/cninfo-mcp",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "MCP Server for querying and downloading Chinese listed companies' annual reports from CNINFO (巨潮资讯网)",
   "keywords": [
     "mcp",
@@ -45,8 +45,10 @@
   ],
   "files": [
     "bin/",
-    "python/",
-    "scripts/",
+    "python/mcp_server.py",
+    "python/spider.py",
+    "python/requirements.txt",
+    "scripts/install-python-deps.js",
     "README.md",
     "LICENSE"
   ]

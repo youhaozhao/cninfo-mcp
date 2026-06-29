@@ -1,6 +1,6 @@
 {
   "name": "@youhaozhao/cninfo-mcp",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "MCP Server for querying and downloading Chinese listed companies' periodic reports from CNINFO (巨潮资讯网)",
   "keywords": [
     "mcp",
@@ -12,7 +12,17 @@
     "semiannual-reports",
     "periodic-reports",
     "finance",
-    "python"
+    "python",
+    "巨潮",
+    "巨潮资讯",
+    "定期报告",
+    "年报",
+    "半年报",
+    "季报",
+    "招股书",
+    "A股",
+    "上市公司",
+    "财报"
   ],
   "homepage": "https://github.com/youhaozhao/cninfo-mcp#readme",
   "repository": {

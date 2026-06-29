@@ -161,7 +161,9 @@ def normalize_report_type(report_type: Optional[str]) -> str:
     normalized = REPORT_TYPE_ALIASES.get(key)
     if normalized is None:
         supported = ", ".join(supported_report_types().keys())
-        raise ValueError(f"Unsupported report_type '{report_type}'. Supported: {supported}")
+        raise ValueError(
+            f"Unsupported report_type '{report_type}'. Supported: {supported}"
+        )
     return normalized
 
 
@@ -291,8 +293,15 @@ def _is_report_title(
     spec = REPORT_TYPE_SPECS[normalized_type]
 
     if normalized_type == "prospectus":
-        return any(keyword in compact_title for keyword in spec["keywords"])
+        matched = next((kw for kw in spec["keywords"] if kw in compact_title), None)
+        if matched is None:
+            return False
+        # 去掉招股书正式名称后再判断摘要/更正等变体，避免“招股说明书”自带的
+        # “说明”被 COMMON_EXCLUDE_KEYWORDS 误伤（参见 #2）。
+        remainder = compact_title.replace(matched, "")
+        return not any(kw in remainder for kw in COMMON_EXCLUDE_KEYWORDS)
 
+    # 摘要/更正/修订等非正文变体应排除
     if any(keyword in compact_title for keyword in COMMON_EXCLUDE_KEYWORDS):
         return False
 
@@ -312,13 +321,20 @@ def _is_annual_report_title(
     return _is_report_title(title, "annual", year_filter=year_filter)
 
 
-def _matches_year(announcement: dict, report_type: str, year: Optional[Union[int, str]]):
+def _matches_year(
+    announcement: dict, report_type: str, year: Optional[Union[int, str]]
+):
     if year is None:
         return True
     normalized_type = normalize_report_type(report_type)
     if normalized_type == "prospectus":
-        announcement_time = str(announcement.get("announcementTime", ""))
-        return announcement_time.startswith(str(year))
+        announcement_time = announcement.get("announcementTime", "")
+        # announcementTime 通常是 "YYYY-MM-DD" 字符串；个别接口可能返回 epoch 毫秒
+        if isinstance(announcement_time, (int, float)):
+            announcement_time = datetime.datetime.fromtimestamp(
+                announcement_time / 1000
+            ).strftime("%Y-%m-%d")
+        return str(announcement_time).startswith(str(year))
     return _is_report_title(
         announcement.get("announcementTitle", ""), normalized_type, year_filter=year
     )
@@ -420,7 +436,7 @@ def Download(
     normalized_type = normalize_report_type(report_type) if report_type else None
 
     for i in single_page:
-        title = i["announcementTitle"]
+        title = i.get("announcementTitle", "")
         if normalized_type:
             should_download = _is_report_title(
                 title, normalized_type, year_filter=year_filter
@@ -434,14 +450,14 @@ def Download(
         if not should_download:
             continue
 
-        download = download_path + i["adjunctUrl"]
+        adjunct_url = i.get("adjunctUrl", "")
+        if not adjunct_url:
+            logger.warning("公告缺少 adjunctUrl，跳过：%s", title)
+            continue
+
+        download = download_path + adjunct_url
         name = _sanitize_filename(
-            i["secCode"]
-            + "_"
-            + i["secName"]
-            + "_"
-            + i["announcementTitle"]
-            + ".pdf"
+            i.get("secCode", "") + "_" + i.get("secName", "") + "_" + title + ".pdf"
         )
         file_path = output_dir + name
 
@@ -524,7 +540,11 @@ def query_reports(stock_code, report_type="annual", year=None):
 
         if not _is_report_title(title, normalized_type, year_filter=year):
             continue
-        if not _matches_year(announcement, normalized_type, year):
+        # 招股书标题不含年份，需按 announcementTime 另行核对；其余类型的年份
+        # 已在 _is_report_title 内匹配，无需重复。
+        if normalized_type == "prospectus" and not _matches_year(
+            announcement, normalized_type, year
+        ):
             continue
         filtered.append(announcement)
 

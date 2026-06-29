@@ -67,7 +67,7 @@ def query_annual_reports_tool(
         - report_type: The requested report type
         - year: The filtered year (if any)
         - count: Number of reports found
-        - reports: List of report details (announcementTitle, announcementTime, secCode, secName)
+        - reports: List of report details (announcementTitle, announcementTime, secCode, secName, adjunctUrl)
     """
     try:
         reports = query_reports(stock_code, report_type, year)

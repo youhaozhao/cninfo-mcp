@@ -1,5 +1,5 @@
 """
-从巨潮资讯下载年度报告和招股书
+从巨潮资讯查询和下载上市公司定期报告、招股书
 """
 
 import datetime
@@ -32,6 +32,101 @@ QUERY_URL = "http://www.cninfo.com.cn/new/hisAnnouncement/query"
 MAX_RETRIES = 3
 RETRY_BACKOFF = 1.0
 
+
+REPORT_TYPE_ALIASES = {
+    "annual": "annual",
+    "annual_report": "annual",
+    "yearly": "annual",
+    "ndbg": "annual",
+    "年报": "annual",
+    "年度报告": "annual",
+    "semiannual": "semiannual",
+    "semi_annual": "semiannual",
+    "half_year": "semiannual",
+    "half-year": "semiannual",
+    "bndbg": "semiannual",
+    "半年度报告": "semiannual",
+    "半年报": "semiannual",
+    "中报": "semiannual",
+    "q1": "q1",
+    "first_quarter": "q1",
+    "yjdbg": "q1",
+    "一季报": "q1",
+    "第一季度报告": "q1",
+    "q3": "q3",
+    "third_quarter": "q3",
+    "sjdbg": "q3",
+    "三季报": "q3",
+    "第三季度报告": "q3",
+    "prospectus": "prospectus",
+    "ipo": "prospectus",
+    "招股书": "prospectus",
+    "招股说明书": "prospectus",
+    "招股意向书": "prospectus",
+}
+
+
+REPORT_TYPE_SPECS = {
+    "annual": {
+        "label": "年度报告",
+        "category": "category_ndbg_szsh",
+        "patterns": [
+            r".*{year}年年度报告{suffix}",
+            r".*{year}年度报告{suffix}",
+            r".*{year}年报{suffix}",
+        ],
+    },
+    "semiannual": {
+        "label": "半年度报告",
+        "category": "category_bndbg_szsh",
+        "patterns": [
+            r".*{year}年半年度报告{suffix}",
+            r".*{year}半年度报告{suffix}",
+            r".*{year}年中期报告{suffix}",
+        ],
+    },
+    "q1": {
+        "label": "第一季度报告",
+        "category": "category_yjdbg_szsh",
+        "patterns": [
+            r".*{year}年第一季度报告{suffix}",
+            r".*{year}第一季度报告{suffix}",
+            r".*{year}年一季度报告{suffix}",
+            r".*{year}一季度报告{suffix}",
+        ],
+    },
+    "q3": {
+        "label": "第三季度报告",
+        "category": "category_sjdbg_szsh",
+        "patterns": [
+            r".*{year}年第三季度报告{suffix}",
+            r".*{year}第三季度报告{suffix}",
+            r".*{year}年三季度报告{suffix}",
+            r".*{year}三季度报告{suffix}",
+        ],
+    },
+    "prospectus": {
+        "label": "招股书",
+        "category": "",
+        "keywords": ["招股书", "招股说明书", "招股意向书"],
+    },
+}
+
+
+COMMON_EXCLUDE_KEYWORDS = [
+    "摘要",
+    "确认意见",
+    "取消",
+    "更正",
+    "补充",
+    "说明",
+    "提示",
+    "致歉",
+    "修订",
+    "英文",
+]
+
+
 User_Agent = [
     "Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; Win64; x64; Trident/5.0; .NET CLR 3.5.30729; .NET CLR 3.0.30729; .NET CLR 2.0.50727; Media Center PC 6.0)",
     "Mozilla/5.0 (compatible; MSIE 8.0; Windows NT 6.0; Trident/4.0; WOW64; Trident/4.0; SLCC2; .NET CLR 2.0.50727; .NET CLR 3.5.30729; .NET CLR 3.0.30729; .NET CLR 1.0.3705; .NET CLR 1.1.4322)",
@@ -55,6 +150,21 @@ BASE_HEADERS = {
 }
 
 
+def supported_report_types() -> dict:
+    """返回当前支持的报告类型。"""
+    return {key: spec["label"] for key, spec in REPORT_TYPE_SPECS.items()}
+
+
+def normalize_report_type(report_type: Optional[str]) -> str:
+    """把英文/中文别名规范化为内部报告类型。"""
+    key = str(report_type or "annual").strip().lower().replace(" ", "_")
+    normalized = REPORT_TYPE_ALIASES.get(key)
+    if normalized is None:
+        supported = ", ".join(supported_report_types().keys())
+        raise ValueError(f"Unsupported report_type '{report_type}'. Supported: {supported}")
+    return normalized
+
+
 def _build_headers() -> dict:
     """构造请求头，避免在并发场景下修改全局字典。"""
     headers = BASE_HEADERS.copy()
@@ -74,9 +184,7 @@ def _post_json(url: str, data: dict) -> dict:
     last_exc = None
     for attempt in range(MAX_RETRIES):
         try:
-            resp = requests.post(
-                url, headers=_build_headers(), data=data, timeout=30
-            )
+            resp = requests.post(url, headers=_build_headers(), data=data, timeout=30)
             resp.raise_for_status()
             return resp.json()
         except requests.exceptions.HTTPError as e:
@@ -161,347 +269,310 @@ def _paginate(fetch_fn, stock):
         if not items:
             break
         all_items.extend(items)
-        if len(items) < PAGE_SIZE:  # 不足一页说明已到最后一页
+        if len(items) < PAGE_SIZE:
             break
     else:
         logger.warning("翻页达到上限 %s，结果可能被截断（%s）", MAX_PAGES, stock)
     return all_items
 
 
-def _is_annual_report_title(
-    title: str, year_filter: Optional[Union[int, str]] = None
+def _compact_title(title: str) -> str:
+    return re.sub(r"\s+", "", title or "")
+
+
+def _is_report_title(
+    title: str,
+    report_type: str,
+    year_filter: Optional[Union[int, str]] = None,
 ) -> bool:
-    """
-    判断标题是否为“年度报告正文”。
+    """判断标题是否为指定报告类型的正文。"""
+    compact_title = _compact_title(title)
+    normalized_type = normalize_report_type(report_type)
+    spec = REPORT_TYPE_SPECS[normalized_type]
 
-    支持常见变体：
-    - 2024年年度报告
-    - 2024年度报告
-    - 2024年报
-    """
-    compact_title = re.sub(r"\s+", "", title or "")
+    if normalized_type == "prospectus":
+        return any(keyword in compact_title for keyword in spec["keywords"])
 
-    # 非正文公告关键词过滤
-    exclude_keywords = [
-        "摘要",
-        "确认意见",
-        "取消",
-        "更正",
-        "补充",
-        "说明",
-        "提示",
-        "致歉",
-        "修订",
-        "英文",
-    ]
-    if any(keyword in compact_title for keyword in exclude_keywords):
+    if any(keyword in compact_title for keyword in COMMON_EXCLUDE_KEYWORDS):
         return False
 
     year_expr = re.escape(str(year_filter)) if year_filter is not None else r"\d{4}"
     suffix_expr = r"(?:[（(]更新后[)）])?"
     patterns = [
-        rf".*{year_expr}年年度报告{suffix_expr}",
-        rf".*{year_expr}年度报告{suffix_expr}",
+        pattern.format(year=year_expr, suffix=suffix_expr)
+        for pattern in spec["patterns"]
     ]
-    if year_filter is not None:
-        patterns.append(rf".*{year_expr}年报{suffix_expr}")
-
     return any(re.fullmatch(pattern, compact_title) for pattern in patterns)
+
+
+def _is_annual_report_title(
+    title: str, year_filter: Optional[Union[int, str]] = None
+) -> bool:
+    """兼容旧调用：判断标题是否为年度报告正文。"""
+    return _is_report_title(title, "annual", year_filter=year_filter)
+
+
+def _matches_year(announcement: dict, report_type: str, year: Optional[Union[int, str]]):
+    if year is None:
+        return True
+    normalized_type = normalize_report_type(report_type)
+    if normalized_type == "prospectus":
+        announcement_time = str(announcement.get("announcementTime", ""))
+        return announcement_time.startswith(str(year))
+    return _is_report_title(
+        announcement.get("announcementTitle", ""), normalized_type, year_filter=year
+    )
+
+
+def _build_report_query(
+    page: int,
+    stock_code: str,
+    report_type: str,
+    column: str,
+    plate: str,
+    stock_value: str = "",
+) -> dict:
+    normalized_type = normalize_report_type(report_type)
+    spec = REPORT_TYPE_SPECS[normalized_type]
+
+    if normalized_type == "prospectus":
+        searchkey = "招股" if stock_value else f"{stock_code} 招股"
+    else:
+        searchkey = "" if stock_value else stock_code
+
+    return {
+        "pageNum": page,
+        "pageSize": PAGE_SIZE,
+        "tabName": "fulltext",
+        "column": column,
+        "stock": stock_value,
+        "searchkey": searchkey,
+        "secid": "",
+        "plate": plate,
+        "category": spec["category"],
+        "trade": "",
+        "seDate": _date_range(EARLIEST_DATE),
+    }
+
+
+def _query_exchange_report(
+    page: int,
+    stock_code: str,
+    report_type: str,
+    column: str,
+    plate: str,
+    stock_value: str = "",
+) -> list:
+    query = _build_report_query(
+        page=page,
+        stock_code=stock_code,
+        report_type=report_type,
+        column=column,
+        plate=plate,
+        stock_value=stock_value,
+    )
+    return _query_announcements(query)
+
+
+def _sanitize_filename(name: str) -> str:
+    return re.sub(r'[\\/:*?"<>|]', "", name).strip()
 
 
 # 深市 年度报告
 def szseAnnual(page, stock):
-    query = {
-        "pageNum": page,  # 页码
-        "pageSize": PAGE_SIZE,
-        "tabName": "fulltext",
-        "column": "szse",  # 深交所
-        "stock": "",
-        "searchkey": stock,  # 使用searchkey查询股票代码或公司名
-        "secid": "",
-        "plate": "sz",
-        "category": "category_ndbg_szsh",  # 年度报告
-        "trade": "",
-        "seDate": _date_range(EARLIEST_DATE),  # 时间区间
-    }
-
-    return _query_announcements(query)
+    return _query_exchange_report(page, stock, "annual", "szse", "sz")
 
 
 # 沪市 年度报告
 def sseAnnual(page, stock):
-    query = {
-        "pageNum": page,  # 页码
-        "pageSize": PAGE_SIZE,
-        "tabName": "fulltext",
-        "column": "sse",
-        "stock": "",
-        "searchkey": stock,  # 使用searchkey查询股票代码或公司名
-        "secid": "",
-        "plate": "sh",
-        "category": "category_ndbg_szsh",  # 年度报告
-        "trade": "",
-        "seDate": _date_range(EARLIEST_DATE),  # 时间区间
-    }
-
-    return _query_announcements(query)
+    return _query_exchange_report(page, stock, "annual", "sse", "sh")
 
 
 # 北交所 年度报告
 def bseAnnual(page, stock):
-    """北交所年报查询。
-
-    stock 形如 "代码,orgId"，由 _resolve_org_id 解析得到。北交所必须
-    通过 plate=bj + stock="代码,orgId" 查询，searchkey/裸代码均返回空。
-    """
-    query = {
-        "pageNum": page,  # 页码
-        "pageSize": PAGE_SIZE,
-        "tabName": "fulltext",
-        "column": "bj",  # 北交所
-        "stock": stock,  # 必须为 "代码,orgId"
-        "searchkey": "",
-        "secid": "",
-        "plate": "bj",
-        "category": "category_ndbg_szsh",  # 年度报告
-        "trade": "",
-        "seDate": _date_range(EARLIEST_DATE),  # 时间区间
-    }
-
-    return _query_announcements(query)
+    """北交所年报查询，stock 形如 "代码,orgId"。"""
+    code = str(stock).split(",", 1)[0]
+    return _query_exchange_report(page, code, "annual", "bj", "bj", stock_value=stock)
 
 
 # 深市 招股
 def szseStock(page, stock):
-    query = {
-        "pageNum": page,  # 页码
-        "pageSize": PAGE_SIZE,
-        "tabName": "fulltext",
-        "column": "szse",
-        "stock": "",
-        "searchkey": stock + " 招股",  # 组合搜索：股票代码 + 招股
-        "secid": "",
-        "plate": "sz",
-        "category": "",
-        "trade": "",
-        "seDate": _date_range(EARLIEST_DATE),  # 时间区间
-    }
-
-    return _query_announcements(query)
+    return _query_exchange_report(page, stock, "prospectus", "szse", "sz")
 
 
 # 沪市 招股
 def sseStock(page, stock):
-    query = {
-        "pageNum": page,  # 页码
-        "pageSize": PAGE_SIZE,
-        "tabName": "fulltext",
-        "column": "sse",
-        "stock": "",
-        "searchkey": stock + " 招股",  # 组合搜索：股票代码 + 招股
-        "secid": "",
-        "plate": "sh",
-        "category": "",
-        "trade": "",
-        "seDate": _date_range(EARLIEST_DATE),  # 时间区间
-    }
-
-    return _query_announcements(query)
+    return _query_exchange_report(page, stock, "prospectus", "sse", "sh")
 
 
 def Download(
     single_page,
+    report_type: Optional[str] = None,
     year_filter: Optional[Union[int, str]] = None,
     save_path: Optional[str] = None,
 ):
-    """下载公告列表中的 PDF 文件"""
+    """下载公告列表中的 PDF 文件。"""
     if single_page is None:
-        return
+        return 0
 
-    allowed_list_2 = [
-        "招股书",
-        "招股说明书",
-        "招股意向书",
-    ]
-
-    output_dir = (save_path or saving_path).rstrip("/") + "/"
+    output_dir = (save_path or saving_path).rstrip("/\\") + "/"
     downloaded_count = 0
+    normalized_type = normalize_report_type(report_type) if report_type else None
 
     for i in single_page:
         title = i["announcementTitle"]
-
-        # 跳过确认意见、取消公告、摘要等非正文文件
-        if "确认意见" in title or "取消" in title or "摘要" in title:
-            continue
-
-        # 年报标题匹配：支持“2024年年度报告/2024年度报告/2024年报”等变体
-        is_annual_report = _is_annual_report_title(title, year_filter=year_filter)
-
-        # 检查招股书
-        is_prospectus = any(item in title for item in allowed_list_2)
-
-        if is_annual_report or is_prospectus:
-            download = download_path + i["adjunctUrl"]
-            name = (
-                i["secCode"]
-                + "_"
-                + i["secName"]
-                + "_"
-                + i["announcementTitle"]
-                + ".pdf"
+        if normalized_type:
+            should_download = _is_report_title(
+                title, normalized_type, year_filter=year_filter
             )
-            if "*" in name:
-                name = name.replace("*", "")
-            file_path = output_dir + name
-
-            # 显示下载进度
-            logger.info("↓ %s", name)
-
-            # 确保目录存在
-            os.makedirs(output_dir, exist_ok=True)
-
-            time.sleep(random.random() * 2)
-
-            r = requests.get(
-                download, headers={"User-Agent": random.choice(User_Agent)}, timeout=30
-            )
-            r.raise_for_status()
-            with open(file_path, "wb") as f:
-                f.write(r.content)
-            downloaded_count += 1
         else:
+            should_download = any(
+                _is_report_title(title, candidate, year_filter=year_filter)
+                for candidate in REPORT_TYPE_SPECS
+            )
+
+        if not should_download:
             continue
+
+        download = download_path + i["adjunctUrl"]
+        name = _sanitize_filename(
+            i["secCode"]
+            + "_"
+            + i["secName"]
+            + "_"
+            + i["announcementTitle"]
+            + ".pdf"
+        )
+        file_path = output_dir + name
+
+        logger.info("↓ %s", name)
+        os.makedirs(output_dir, exist_ok=True)
+
+        time.sleep(random.random() * 2)
+
+        r = requests.get(
+            download, headers={"User-Agent": random.choice(User_Agent)}, timeout=30
+        )
+        r.raise_for_status()
+        with open(file_path, "wb") as f:
+            f.write(r.content)
+        downloaded_count += 1
 
     return downloaded_count
 
 
-def query_prospectus(stock_code):
-    """查询指定股票代码的招股书公告列表"""
+def query_reports(stock_code, report_type="annual", year=None):
+    """查询指定股票和报告类型的公告列表。"""
+    normalized_type = normalize_report_type(report_type)
     all_announcements = []
+    requested_code = re.sub(r"\D", "", str(stock_code or ""))
+    allowed_sec_codes = {requested_code} if requested_code else set()
 
-    try:
-        announcements_sse = _paginate(sseStock, stock_code)
-        all_announcements.extend(announcements_sse)
-    except Exception as e:
-        logger.warning("沪市招股书查询失败: %s", e)
-
-    try:
-        announcements_szse = _paginate(szseStock, stock_code)
-        all_announcements.extend(announcements_szse)
-    except Exception as e:
-        logger.warning("深市招股书查询失败: %s", e)
-
-    prospectus_keywords = ["招股书", "招股说明书", "招股意向书"]
-    filtered = [
-        a
-        for a in all_announcements
-        if any(kw in a.get("announcementTitle", "") for kw in prospectus_keywords)
+    exchanges = [
+        ("sse", "sh", "沪市"),
+        ("szse", "sz", "深市"),
     ]
+    for column, plate, label in exchanges:
+        try:
+            fetch_fn = lambda page, _stock, c=column, p=plate: _query_exchange_report(
+                page, stock_code, normalized_type, c, p
+            )
+            all_announcements.extend(_paginate(fetch_fn, stock_code))
+        except Exception as e:
+            logger.warning(
+                "%s%s查询失败: %s",
+                label,
+                REPORT_TYPE_SPECS[normalized_type]["label"],
+                e,
+            )
+
+    if _is_bse_code(stock_code):
+        try:
+            resolved = _resolve_org_id(stock_code)
+            if resolved:
+                code, org_id = resolved
+                allowed_sec_codes.add(code)
+                stock_value = f"{code},{org_id}"
+                fetch_fn = lambda page, _stock: _query_exchange_report(
+                    page,
+                    code,
+                    normalized_type,
+                    "bj",
+                    "bj",
+                    stock_value=stock_value,
+                )
+                all_announcements.extend(_paginate(fetch_fn, stock_value))
+        except Exception as e:
+            logger.warning(
+                "北交所%s查询失败: %s",
+                REPORT_TYPE_SPECS[normalized_type]["label"],
+                e,
+            )
+
+    filtered = []
+    seen = set()
+    for announcement in all_announcements:
+        title = announcement.get("announcementTitle", "")
+        adjunct_url = announcement.get("adjunctUrl", "")
+        sec_code = str(announcement.get("secCode", ""))
+        if allowed_sec_codes and sec_code not in allowed_sec_codes:
+            continue
+        dedupe_key = (announcement.get("secCode"), title, adjunct_url)
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+
+        if not _is_report_title(title, normalized_type, year_filter=year):
+            continue
+        if not _matches_year(announcement, normalized_type, year):
+            continue
+        filtered.append(announcement)
 
     return filtered
 
 
-def download_prospectus(stock_code, save_path=None):
-    """下载指定股票的招股书"""
-    announcements = query_prospectus(stock_code)
+def download_reports(stock_code, report_type="annual", year=None, save_path=None):
+    """下载指定股票和报告类型的 PDF。"""
+    normalized_type = normalize_report_type(report_type)
+    label = REPORT_TYPE_SPECS[normalized_type]["label"]
+    announcements = query_reports(stock_code, normalized_type, year)
 
     if not announcements:
         return {
             "success": False,
-            "message": f"未找到股票 {stock_code} 的招股书",
+            "message": f"未找到股票 {stock_code} 的{label}"
+            + (f"（{year} 年）" if year else ""),
             "downloaded": 0,
         }
 
     output_dir = save_path or saving_path
-    count = Download(announcements, save_path=output_dir)
+    count = Download(
+        announcements,
+        report_type=normalized_type,
+        year_filter=year,
+        save_path=output_dir,
+    )
 
     downloaded = count or 0
+    year_suffix = f"（{year} 年）" if year else ""
     return {
         "success": downloaded > 0,
-        "message": f"已下载 {stock_code} 招股书，共 {downloaded} 个文件"
+        "message": f"已下载 {stock_code} {label}{year_suffix}，共 {downloaded} 个文件"
         if downloaded > 0
-        else f"未下载任何文件（{stock_code} 招股书）",
+        else f"未下载任何文件（{stock_code} {label}{year_suffix}）",
         "downloaded": downloaded,
         "path": output_dir,
     }
 
 
 def query_annual_reports(stock_code, year=None):
-    """查询指定股票的年度报告列表"""
-    all_announcements = []
-
-    # 查询沪市
-    try:
-        announcements_sse = _paginate(sseAnnual, stock_code)
-        all_announcements.extend(announcements_sse)
-    except Exception as e:
-        logger.warning("沪市年报查询失败: %s", e)
-
-    # 查询深市
-    try:
-        announcements_szse = _paginate(szseAnnual, stock_code)
-        all_announcements.extend(announcements_szse)
-    except Exception as e:
-        logger.warning("深市年报查询失败: %s", e)
-
-    # 查询北交所（代码以 4/8/9 开头）。北交所接口必须用 orgId，
-    # 故先解析 orgId 再以 stock="代码,orgId" 翻页查询。
-    if _is_bse_code(stock_code):
-        try:
-            resolved = _resolve_org_id(stock_code)
-            if resolved:
-                code, org_id = resolved
-                announcements_bse = _paginate(bseAnnual, f"{code},{org_id}")
-                all_announcements.extend(announcements_bse)
-        except Exception as e:
-            logger.warning("北交所年报查询失败: %s", e)
-
-    # 按年份过滤
-    if year:
-        year_expr = re.escape(str(year))
-        year_patterns = [
-            rf"{year_expr}年年度报告",
-            rf"{year_expr}年度报告",
-            rf"{year_expr}年报",
-        ]
-        filtered = []
-        for announcement in all_announcements:
-            title = re.sub(r"\s+", "", announcement.get("announcementTitle", ""))
-            # 这里故意使用宽松匹配作为“预筛选”以保留候选项。
-            # 真正的严格判定（fullmatch + 排除词）在 Download() 的
-            # _is_annual_report_title() 中执行，形成两层防线。
-            if any(re.search(pattern, title) for pattern in year_patterns):
-                filtered.append(announcement)
-        all_announcements = filtered
-
-    return all_announcements
+    """查询指定股票的年度报告列表。"""
+    return query_reports(stock_code, "annual", year)
 
 
 def download_annual_reports(stock_code, year=None, save_path=None):
-    """下载指定股票的年度报告"""
-    announcements = query_annual_reports(stock_code, year)
-
-    if not announcements:
-        return {
-            "success": False,
-            "message": f"未找到股票 {stock_code} 的年度报告"
-            + (f"（{year} 年）" if year else ""),
-            "downloaded": 0,
-        }
-
-    output_dir = save_path or saving_path
-    count = Download(announcements, year_filter=year, save_path=output_dir)
-
-    downloaded = count or 0
-    year_suffix = f"（{year} 年）" if year else ""
-    return {
-        "success": downloaded > 0,
-        "message": f"已下载 {stock_code} 年度报告{year_suffix}，共 {downloaded} 个文件"
-        if downloaded > 0
-        else f"未下载任何文件（{stock_code} 年度报告{year_suffix}）",
-        "downloaded": downloaded,
-        "path": output_dir,
-    }
+    """下载指定股票的年度报告。"""
+    return download_reports(stock_code, "annual", year=year, save_path=save_path)
 
 
 def Run(page_number, stock):
@@ -521,10 +592,10 @@ def Run(page_number, stock):
             annual_report = szseAnnual(page_number, stock)
         except Exception:
             logger.warning("%s page error", page_number)
-    Download(annual_report)
-    Download(stock_report)
-    Download(annual_report_)
-    Download(stock_report_)
+    Download(annual_report, report_type="annual")
+    Download(stock_report, report_type="prospectus")
+    Download(annual_report_, report_type="annual")
+    Download(stock_report_, report_type="prospectus")
 
 
 if __name__ == "__main__":
@@ -534,6 +605,6 @@ if __name__ == "__main__":
     with open("company_id.txt") as file:
         lines = file.readlines()
         for line in lines:
-            stock = line
-            Run(1, line)
-            logger.info("%s done", line.strip())
+            stock = line.strip()
+            Run(1, stock)
+            logger.info("%s done", stock)

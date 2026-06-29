@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 巨潮资讯 MCP 服务器
-用于查询和下载 A 股年度报告的 MCP 工具服务
+用于查询和下载 A 股定期报告、招股书的 MCP 工具服务
 """
 
 import os
@@ -13,73 +13,85 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from mcp.server import FastMCP
 from spider import (
-    query_annual_reports,
-    download_annual_reports,
-    query_prospectus,
-    download_prospectus,
+    query_reports,
+    download_reports,
     saving_path,
+    supported_report_types,
 )
 
 # 创建 MCP 服务器实例
 mcp = FastMCP(
     name="cninfo-server",
-    instructions="CNINFO annual reports server - Query and download Chinese listed companies' annual reports from cninfo.com.cn",
+    instructions="CNINFO reports server - Query and download Chinese listed companies' periodic reports from cninfo.com.cn",
 )
 
 
+def _format_reports(reports: list) -> list:
+    """提取 MCP 返回中稳定、有用的公告字段。"""
+    base_url = "https://static.cninfo.com.cn/"
+    report_details = []
+    for report in reports:
+        adj = report.get("adjunctUrl", "")
+        report_details.append(
+            {
+                "announcementTitle": report.get("announcementTitle", ""),
+                "announcementTime": report.get("announcementTime", ""),
+                "secCode": report.get("secCode", ""),
+                "secName": report.get("secName", ""),
+                "adjunctUrl": base_url + adj if adj else "",
+            }
+        )
+    return report_details
+
+
+def _supported_report_types_text() -> str:
+    return ", ".join(supported_report_types().keys())
+
+
 @mcp.tool()
-def query_annual_reports_tool(stock_code: str, year: Optional[int] = None) -> dict:
+def query_annual_reports_tool(
+    stock_code: str, year: Optional[int] = None, report_type: str = "annual"
+) -> dict:
     """
-    Query annual reports for a Chinese listed company
+    Query periodic reports for a Chinese listed company.
 
     Args:
-        stock_code: Stock code (e.g., '000888' for峨眉山, '688777' for 中科德芯)
+        stock_code: Stock code (e.g., '000888' for 峨眉山, '688777' for 中科德芯)
         year: Optional year to filter (e.g., 2024). If not provided, returns all available years
+        report_type: Optional report type. Supported values: annual, semiannual, q1, q3, prospectus. Defaults to annual for backward compatibility.
 
     Returns:
         Dictionary containing:
         - success: Boolean indicating if the query was successful
         - stock_code: The queried stock code
+        - report_type: The requested report type
         - year: The filtered year (if any)
         - count: Number of reports found
         - reports: List of report details (announcementTitle, announcementTime, secCode, secName)
     """
     try:
-        reports = query_annual_reports(stock_code, year)
+        reports = query_reports(stock_code, report_type, year)
 
         if not reports:
             return {
                 "success": False,
                 "stock_code": stock_code,
+                "report_type": report_type,
                 "year": year,
                 "count": 0,
                 "reports": [],
-                "message": f"No annual reports found for stock {stock_code}"
+                "message": f"No {report_type} reports found for stock {stock_code}"
                 + (f" in year {year}" if year else ""),
             }
-
-        # 提取关键字段
-        base_url = "https://static.cninfo.com.cn/"
-        report_details = []
-        for report in reports:
-            adj = report.get("adjunctUrl", "")
-            report_details.append(
-                {
-                    "announcementTitle": report.get("announcementTitle", ""),
-                    "announcementTime": report.get("announcementTime", ""),
-                    "secCode": report.get("secCode", ""),
-                    "secName": report.get("secName", ""),
-                    "adjunctUrl": base_url + adj if adj else "",
-                }
-            )
 
         return {
             "success": True,
             "stock_code": stock_code,
+            "report_type": report_type,
             "year": year,
             "count": len(reports),
-            "reports": report_details,
-            "message": f"Found {len(reports)} annual report(s)"
+            "reports": _format_reports(reports),
+            "message": f"Found {len(reports)} {report_type} report(s)"
             + (f" for year {year}" if year else ""),
         }
 
@@ -87,30 +99,36 @@ def query_annual_reports_tool(stock_code: str, year: Optional[int] = None) -> di
         return {
             "success": False,
             "stock_code": stock_code,
+            "report_type": report_type,
             "year": year,
             "count": 0,
             "reports": [],
             "error": str(e),
-            "message": f"Error querying annual reports: {str(e)}",
+            "message": f"Error querying reports: {str(e)}. Supported report_type values: {_supported_report_types_text()}",
         }
 
 
 @mcp.tool()
 def download_annual_reports_tool(
-    stock_code: str, year: Optional[int] = None, save_path: Optional[str] = None
+    stock_code: str,
+    year: Optional[int] = None,
+    save_path: Optional[str] = None,
+    report_type: str = "annual",
 ) -> dict:
     """
-    Download annual reports for a Chinese listed company
+    Download periodic reports for a Chinese listed company.
 
     Args:
         stock_code: Stock code (e.g., '000888' for 峨眉山, '688777' for 中科德芯)
         year: Optional year to filter (e.g., 2024). If not provided, downloads all available years
         save_path: Optional directory to save files (e.g., '/Users/me/reports'). Defaults to pdf/ in package directory
+        report_type: Optional report type. Supported values: annual, semiannual, q1, q3, prospectus. Defaults to annual for backward compatibility.
 
     Returns:
         Dictionary containing:
         - success: Boolean indicating if download was successful
         - stock_code: The stock code
+        - report_type: The requested report type
         - year: The filtered year (if any)
         - downloaded: Number of files downloaded
         - path: Directory where files were saved
@@ -120,8 +138,11 @@ def download_annual_reports_tool(
         output_dir = save_path or saving_path
         os.makedirs(output_dir, exist_ok=True)
 
-        result = download_annual_reports(stock_code, year, save_path=output_dir)
+        result = download_reports(
+            stock_code, report_type, year=year, save_path=output_dir
+        )
         result["stock_code"] = stock_code
+        result["report_type"] = report_type
         result["year"] = year
 
         return result
@@ -130,108 +151,12 @@ def download_annual_reports_tool(
         return {
             "success": False,
             "stock_code": stock_code,
+            "report_type": report_type,
             "year": year,
             "downloaded": 0,
             "path": save_path or saving_path,
             "error": str(e),
-            "message": f"Error downloading annual reports: {str(e)}",
-        }
-
-
-@mcp.tool()
-def query_prospectus_tool(stock_code: str) -> dict:
-    """
-    Query prospectus documents for a Chinese listed company
-
-    Args:
-        stock_code: Stock code (e.g., '000888' for 峨眉山, '688777' for 中科德芯)
-
-    Returns:
-        Dictionary containing:
-        - success: Boolean indicating if the query was successful
-        - stock_code: The queried stock code
-        - count: Number of documents found
-        - reports: List of document details (announcementTitle, announcementTime, secCode, secName)
-    """
-    try:
-        reports = query_prospectus(stock_code)
-
-        if not reports:
-            return {
-                "success": False,
-                "stock_code": stock_code,
-                "count": 0,
-                "reports": [],
-                "message": f"No prospectus found for stock {stock_code}",
-            }
-
-        base_url = "https://static.cninfo.com.cn/"
-        report_details = [
-            {
-                "announcementTitle": r.get("announcementTitle", ""),
-                "announcementTime": r.get("announcementTime", ""),
-                "secCode": r.get("secCode", ""),
-                "secName": r.get("secName", ""),
-                "adjunctUrl": base_url + r.get("adjunctUrl", "")
-                if r.get("adjunctUrl")
-                else "",
-            }
-            for r in reports
-        ]
-
-        return {
-            "success": True,
-            "stock_code": stock_code,
-            "count": len(reports),
-            "reports": report_details,
-            "message": f"Found {len(reports)} prospectus document(s)",
-        }
-
-    except Exception as e:
-        return {
-            "success": False,
-            "stock_code": stock_code,
-            "count": 0,
-            "reports": [],
-            "error": str(e),
-            "message": f"Error querying prospectus: {str(e)}",
-        }
-
-
-@mcp.tool()
-def download_prospectus_tool(stock_code: str, save_path: Optional[str] = None) -> dict:
-    """
-    Download prospectus documents for a Chinese listed company
-
-    Args:
-        stock_code: Stock code (e.g., '000888' for 峨眉山, '688777' for 中科德芯)
-        save_path: Optional directory to save files (e.g., '/Users/me/reports'). Defaults to pdf/ in package directory
-
-    Returns:
-        Dictionary containing:
-        - success: Boolean indicating if download was successful
-        - stock_code: The stock code
-        - downloaded: Number of files downloaded
-        - path: Directory where files were saved
-        - message: Status message
-    """
-    try:
-        output_dir = save_path or saving_path
-        os.makedirs(output_dir, exist_ok=True)
-
-        result = download_prospectus(stock_code, save_path=output_dir)
-        result["stock_code"] = stock_code
-
-        return result
-
-    except Exception as e:
-        return {
-            "success": False,
-            "stock_code": stock_code,
-            "downloaded": 0,
-            "path": save_path or saving_path,
-            "error": str(e),
-            "message": f"Error downloading prospectus: {str(e)}",
+            "message": f"Error downloading reports: {str(e)}. Supported report_type values: {_supported_report_types_text()}",
         }
 
 
@@ -239,7 +164,7 @@ def download_prospectus_tool(stock_code: str, save_path: Optional[str] = None) -
 def get_annual_reports_list(stock_code: str) -> str:
     """返回指定股票代码的年度报告格式化列表"""
     try:
-        reports = query_annual_reports(stock_code)
+        reports = query_reports(stock_code, "annual")
 
         if not reports:
             return f"No annual reports found for stock {stock_code}"

@@ -2,7 +2,7 @@
 
 [![npm version](https://img.shields.io/npm/v/@youhaozhao/cninfo-mcp)](https://www.npmjs.com/package/@youhaozhao/cninfo-mcp)
 
-通过 MCP 协议查询和下载巨潮资讯网上市公司年报 PDF 的工具，适用于 Claude Desktop。
+通过 MCP 协议查询和下载巨潮资讯网上市公司定期报告及招股书 PDF 的工具，适用于 Claude Desktop / Claude Code。
 
 ## 使用方法
 
@@ -27,15 +27,27 @@
 
 ## 可用工具
 
-- **`query_annual_reports_tool`** — 查询年报列表，参数：股票代码（必填）、年份（可选）
-- **`download_annual_reports_tool`** — 下载年报 PDF，参数：股票代码（必填）、年份（可选）
+- **`query_annual_reports_tool`** — 查询报告列表，参数：股票代码（必填）、年份（可选）、报告类型（可选，默认 `annual`）
+- **`download_annual_reports_tool`** — 下载报告 PDF，参数：股票代码（必填）、年份（可选）、保存路径（可选）、报告类型（可选，默认 `annual`）
+
+支持的 `report_type`：
+
+- `annual` — 年度报告 / 年报
+- `semiannual` — 半年度报告 / 半年报 / 中报
+- `q1` — 第一季度报告 / 一季报
+- `q3` — 第三季度报告 / 三季报
+- `prospectus` — 招股书 / 招股说明书 / 招股意向书（招股书无固定年份，省略年份参数即可）
 
 示例对话：
 
 ```
 查询 000888 的 2024 年报
+查询 000001 的 2024 半年报
+查询 600519 的 2024 一季报
+下载 300750 的 2023 三季报
 下载 688777 的年报
 查询 920185 的年报      # 北交所，新旧代码（如 835185）均可
+查询 688777 的招股书
 ```
 
 ## 系统要求
@@ -50,5 +62,3 @@
 ## Credits
 
 爬虫逻辑基于 [gaodechen/cninfo_process](https://github.com/gaodechen/cninfo_process)。
-
-

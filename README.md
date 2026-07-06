@@ -4,6 +4,9 @@
 
 通过 MCP 协议查询和下载巨潮资讯网上市公司定期报告及招股书 PDF 的工具，适用于 Claude Desktop / Claude Code。
 
+## 并发限制
+巨潮资讯网后端禁止大量并发，推荐将并发数设置为 4 以防止后端返回大量 403 导致 IP 短暂被封
+
 ## 使用方法
 
 在 Claude Desktop / Claude Code 配置文件中添加：

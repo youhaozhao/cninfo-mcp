@@ -1,3 +1,5 @@
+
+
 # cninfo-mcp
 
 [![npm version](https://img.shields.io/npm/v/@youhaozhao/cninfo-mcp)](https://www.npmjs.com/package/@youhaozhao/cninfo-mcp)
@@ -56,7 +58,7 @@
 ## 系统要求
 
 - Node.js 18+
-- Python 3.10+（Python 依赖会自动安装）
+- Python 3.10+（依赖会自动安装至 `~/.cninfo-mcp/venv` 虚拟环境，无需全局配置）
 
 ## 数据来源
 

@@ -4,6 +4,7 @@
 用于查询和下载 A 股定期报告、招股书的 MCP 工具服务
 """
 
+import json
 import os
 import sys
 from typing import Optional
@@ -11,37 +12,37 @@ from typing import Optional
 # 将当前目录加入模块搜索路径
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from mcp.server import FastMCP
+from mcp.server.mcpserver import MCPServer
 from spider import (
     query_reports,
     download_reports,
+    format_reports,
     saving_path,
     supported_report_types,
 )
 
+def _package_version(default: str = "0.0.0") -> str:
+    """从 package.json 读取版本，避免与 npm 包版本各写一份而漂移。
+
+    package.json 始终随 npm 包发布（不受 files 白名单影响），因此在已安装的
+    包里也能读到。读取失败时退回 default，不让版本号问题挡住服务器启动。
+    """
+    manifest = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "..", "package.json"
+    )
+    try:
+        with open(manifest, encoding="utf-8") as fh:
+            return json.load(fh).get("version") or default
+    except (OSError, ValueError):
+        return default
+
+
 # 创建 MCP 服务器实例
-mcp = FastMCP(
+mcp = MCPServer(
     name="cninfo-server",
     instructions="CNINFO reports server - Query and download Chinese listed companies' periodic reports from cninfo.com.cn",
+    version=_package_version(),
 )
-
-
-def _format_reports(reports: list) -> list:
-    """提取 MCP 返回中稳定、有用的公告字段。"""
-    base_url = "https://static.cninfo.com.cn/"
-    report_details = []
-    for report in reports:
-        adj = report.get("adjunctUrl", "")
-        report_details.append(
-            {
-                "announcementTitle": report.get("announcementTitle", ""),
-                "announcementTime": report.get("announcementTime", ""),
-                "secCode": report.get("secCode", ""),
-                "secName": report.get("secName", ""),
-                "adjunctUrl": base_url + adj if adj else "",
-            }
-        )
-    return report_details
 
 
 def _supported_report_types_text() -> str:
@@ -90,7 +91,7 @@ def query_annual_reports_tool(
             "report_type": report_type,
             "year": year,
             "count": len(reports),
-            "reports": _format_reports(reports),
+            "reports": format_reports(reports),
             "message": f"Found {len(reports)} {report_type} report(s)"
             + (f" for year {year}" if year else ""),
         }

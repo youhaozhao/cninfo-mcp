@@ -1,5 +1,5 @@
 # MCP Server dependencies
-mcp>=1.0.0
+mcp~=2.1.1
 
 # Existing dependencies
 requests>=2.31.0

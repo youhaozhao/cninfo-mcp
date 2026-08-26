@@ -59,6 +59,7 @@
   "files": [
     "bin/",
     "python/mcp_server.py",
+    "python/check_deps.py",
     "python/spider.py",
     "python/requirements.txt",
     "scripts/install-python-deps.js",

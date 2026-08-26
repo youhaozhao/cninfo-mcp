@@ -18,6 +18,9 @@ const REQUIREMENTS_FILE = path.join(
 
 const VENV_DIR = path.join(os.homedir(), ".cninfo-mcp", "venv");
 
+// 依赖探针：校验 venv 是否满足 requirements.txt 的全部约束
+const DEPS_CHECK = path.join(__dirname, "..", "python", "check_deps.py");
+
 function getVenvPython() {
   if (process.platform === "win32") {
     return path.join(VENV_DIR, "Scripts", "python.exe");
@@ -101,8 +104,8 @@ async function main() {
   }
 
   try {
-    // 检查 mcp 是否已安装（用 venv 的 python）
-    await spawnCommand(venvPython, ["-c", "import mcp"]);
+    // 校验依赖是否满足约束（用 venv 的 python）
+    await spawnCommand(venvPython, [DEPS_CHECK]);
     console.log("✅ Python dependencies already installed");
   } catch (error) {
     // 执行安装（用 venv 的 pip）

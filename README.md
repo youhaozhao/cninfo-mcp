@@ -56,7 +56,7 @@
 ## 系统要求
 
 - Node.js 18+
-- Python 3.10+（Python 依赖会自动安装）
+- Python 3.10+（Python 依赖会自动安装；需要 MCP Python SDK v2，旧环境会在下次启动时自动升级）
 
 ## 数据来源
 

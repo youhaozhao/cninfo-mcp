@@ -167,6 +167,27 @@ def normalize_report_type(report_type: Optional[str]) -> str:
     return normalized
 
 
+def format_reports(reports: list) -> list:
+    """提取公告中稳定、有用的字段，并把附件路径补全为可访问的绝对 URL。
+
+    放在 spider.py 是为了紧邻 download_path 前缀定义，避免调用方各自
+    硬编码一份基址。
+    """
+    formatted = []
+    for report in reports:
+        adj = report.get("adjunctUrl", "")
+        formatted.append(
+            {
+                "announcementTitle": report.get("announcementTitle", ""),
+                "announcementTime": report.get("announcementTime", ""),
+                "secCode": report.get("secCode", ""),
+                "secName": report.get("secName", ""),
+                "adjunctUrl": download_path + adj if adj else "",
+            }
+        )
+    return formatted
+
+
 def _build_headers() -> dict:
     """构造请求头，避免在并发场景下修改全局字典。"""
     headers = BASE_HEADERS.copy()

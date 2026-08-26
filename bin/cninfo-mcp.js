@@ -73,6 +73,9 @@ async function ensureVenv(systemPythonCmd) {
   return venvPython;
 }
 
+// 依赖探针：校验 venv 是否满足 requirements.txt 的全部约束
+const DEPS_CHECK = path.join(__dirname, "..", "python", "check_deps.py");
+
 // 检查并安装 Python 依赖（使用 venv 中的 python）
 async function ensureDependencies(venvPython) {
   const requirementsPath = PYTHON_REQUIREMENTS;
@@ -83,8 +86,8 @@ async function ensureDependencies(venvPython) {
   }
 
   try {
-    // 检查 mcp 包是否已安装
-    await spawnAsync(venvPython, ["-c", "import mcp"]);
+    // 校验依赖是否满足约束（不满足时抛错，转入下方安装流程）
+    await spawnAsync(venvPython, [DEPS_CHECK]);
   } catch (error) {
     // 未安装，执行安装
     console.error("Installing Python dependencies...");

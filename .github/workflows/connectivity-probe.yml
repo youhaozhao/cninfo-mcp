@@ -25,6 +25,7 @@ jobs:
         run: pip install "requests>=2.31.0"
 
       - name: 运行连通性探测
+        shell: bash
         run: python scripts/connectivity_probe.py | tee probe_output.txt
 
       - name: 异常时通知 repo owner（去重）

@@ -355,13 +355,32 @@ def test_partial_query_can_download_retained_reports(monkeypatch, tmp_path, pdf_
         "律师对招股说明书的验证报告",
         "招股说明书问询回复",
         "招股说明书（核查意见）",
+        "招股说明书（预披露更新）（核查意见）",
+        "招股说明书（封卷稿）（摘要）",
+        "招股说明书（封卷稿）（英文）",
+        "招股说明书（审计报告）",
+        "招股说明书（附件）",
+        "招股说明书（附录）",
     ],
 )
 def test_prospectus_supporting_documents_excluded(title):
     assert not spider._is_report_title(title, "prospectus")
 
 
-@pytest.mark.parametrize("suffix", ["", "（申报稿）", "（注册稿）", "(上会稿)"])
+@pytest.mark.parametrize(
+    "suffix",
+    [
+        "",
+        "（申报稿）",
+        "（注册稿）",
+        "(上会稿)",
+        "（预披露更新）",
+        "(预披露更新)",
+        "（封卷稿）",
+        "(封卷稿)",
+        "（预披露更新）（2017年12月）",
+    ],
+)
 def test_prospectus_document_versions(suffix):
     assert spider._is_report_title(
         "某公司首次公开发行股票并上市招股说明书" + suffix, "prospectus"

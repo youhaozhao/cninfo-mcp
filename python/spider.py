@@ -368,8 +368,10 @@ def _is_report_title(
     spec = REPORT_TYPE_SPECS[normalized_type]
 
     if normalized_type == "prospectus":
+        # Historical version labels vary; filter document kind below instead
+        # of restricting prospectus versions to a fixed suffix vocabulary.
         match = re.fullmatch(
-            r".*?(?:招股说明书|招股意向书|招股书)(?:[（(](?:申报稿|上会稿|注册稿|注册生效稿|发行稿|更新后)[)）])?",
+            r".*?(?:招股说明书|招股意向书|招股书)(?:\([^()（）]+\)|（[^()（）]+）)*",
             compact_title,
         )
         if not match:
@@ -383,6 +385,9 @@ def _is_report_title(
             "问询",
             "回复",
             "公告",
+            "审计报告",
+            "附件",
+            "附录",
         ]
         return not any(kw in remainder for kw in excluded)
 

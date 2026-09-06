@@ -179,3 +179,28 @@ def test_prospectus_document_versions(suffix):
     assert spider._is_report_title(
         "某公司首次公开发行股票并上市招股说明书" + suffix, "prospectus"
     )
+
+
+import os
+
+
+@pytest.mark.skipif(not hasattr(spider.time, "tzset"), reason="tzset unavailable")
+@pytest.mark.parametrize("zone", ["Asia/Shanghai", "UTC", "America/Edmonton"])
+def test_prospectus_china_new_year(monkeypatch, zone):
+    previous = os.environ.get("TZ")
+    try:
+        os.environ["TZ"] = zone
+        spider.time.tzset()
+        # 2024-01-01 00:00:00 at UTC+08:00, independent of host timezone.
+        assert spider._matches_year(
+            {"announcementTime": 1704038400000}, "prospectus", 2024
+        )
+        assert not spider._matches_year(
+            {"announcementTime": 1704038399999}, "prospectus", 2024
+        )
+    finally:
+        if previous is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = previous
+        spider.time.tzset()

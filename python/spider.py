@@ -363,7 +363,8 @@ def _matches_year(
         # announcementTime 通常是 "YYYY-MM-DD" 字符串；个别接口可能返回 epoch 毫秒
         if isinstance(announcement_time, (int, float)):
             announcement_time = datetime.datetime.fromtimestamp(
-                announcement_time / 1000
+                announcement_time / 1000,
+                tz=datetime.timezone(datetime.timedelta(hours=8)),
             ).strftime("%Y-%m-%d")
         return str(announcement_time).startswith(str(year))
     return _is_report_title(

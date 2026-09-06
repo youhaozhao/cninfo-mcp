@@ -314,13 +314,23 @@ def _is_report_title(
     spec = REPORT_TYPE_SPECS[normalized_type]
 
     if normalized_type == "prospectus":
-        matched = next((kw for kw in spec["keywords"] if kw in compact_title), None)
-        if matched is None:
+        match = re.fullmatch(
+            r".*?(?:招股说明书|招股意向书|招股书)(?:[（(](?:申报稿|上会稿|注册稿|注册生效稿|发行稿|更新后)[)）])?",
+            compact_title,
+        )
+        if not match:
             return False
-        # 去掉招股书正式名称后再判断摘要/更正等变体，避免“招股说明书”自带的
-        # “说明”被 COMMON_EXCLUDE_KEYWORDS 误伤（参见 #2）。
-        remainder = compact_title.replace(matched, "")
-        return not any(kw in remainder for kw in COMMON_EXCLUDE_KEYWORDS)
+        remainder = re.sub(r"招股说明书|招股意向书|招股书", "", compact_title)
+        excluded = COMMON_EXCLUDE_KEYWORDS + [
+            "关于",
+            "意见",
+            "核查",
+            "验证",
+            "问询",
+            "回复",
+            "公告",
+        ]
+        return not any(kw in remainder for kw in excluded)
 
     # 摘要/更正/修订等非正文变体应排除
     if any(keyword in compact_title for keyword in COMMON_EXCLUDE_KEYWORDS):

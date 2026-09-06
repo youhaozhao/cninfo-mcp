@@ -155,3 +155,27 @@ def test_matches_year_non_prospectus_uses_title():
     ann = {"announcementTitle": "某公司2024年年度报告"}
     assert _matches_year(ann, "annual", 2024) is True
     assert _matches_year(ann, "annual", 2023) is False
+
+
+import spider
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "保荐机构关于招股说明书的核查意见",
+        "关于招股说明书",
+        "律师对招股说明书的验证报告",
+        "招股说明书问询回复",
+        "招股说明书（核查意见）",
+    ],
+)
+def test_prospectus_supporting_documents_excluded(title):
+    assert not spider._is_report_title(title, "prospectus")
+
+
+@pytest.mark.parametrize("suffix", ["", "（申报稿）", "（注册稿）", "(上会稿)"])
+def test_prospectus_document_versions(suffix):
+    assert spider._is_report_title(
+        "某公司首次公开发行股票并上市招股说明书" + suffix, "prospectus"
+    )

@@ -15,11 +15,14 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mcp.server.mcpserver import MCPServer
 from spider import (
     query_reports,
+    QueryError,
+    normalize_stock_code,
     download_reports,
     format_reports,
     saving_path,
     supported_report_types,
 )
+
 
 def _package_version(default: str = "0.0.0") -> str:
     """从 package.json 读取版本，避免与 npm 包版本各写一份而漂移。
@@ -63,7 +66,8 @@ def query_annual_reports_tool(
 
     Returns:
         Dictionary containing:
-        - success: Boolean indicating if the query was successful
+        - success: True only for complete queries, including empty results
+        - status: complete, partial, or error; incomplete queries include error details
         - stock_code: The queried stock code
         - report_type: The requested report type
         - year: The filtered year (if any)
@@ -71,11 +75,13 @@ def query_annual_reports_tool(
         - reports: List of report details (announcementTitle, announcementTime, secCode, secName, adjunctUrl)
     """
     try:
+        stock_code = normalize_stock_code(stock_code)
         reports = query_reports(stock_code, report_type, year)
 
         if not reports:
             return {
-                "success": False,
+                "success": True,
+                "status": "complete",
                 "stock_code": stock_code,
                 "report_type": report_type,
                 "year": year,
@@ -87,6 +93,7 @@ def query_annual_reports_tool(
 
         return {
             "success": True,
+            "status": "complete",
             "stock_code": stock_code,
             "report_type": report_type,
             "year": year,
@@ -96,9 +103,24 @@ def query_annual_reports_tool(
             + (f" for year {year}" if year else ""),
         }
 
+    except QueryError as e:
+        return {
+            "success": False,
+            "status": e.status,
+            "stock_code": stock_code,
+            "report_type": report_type,
+            "year": year,
+            "count": len(e.reports),
+            "reports": format_reports(e.reports),
+            "errors": e.errors,
+            "error": str(e),
+            "message": f"Query incomplete: {str(e)}",
+        }
+
     except Exception as e:
         return {
             "success": False,
+            "status": "error",
             "stock_code": stock_code,
             "report_type": report_type,
             "year": year,
@@ -127,7 +149,11 @@ def download_annual_reports_tool(
 
     Returns:
         Dictionary containing:
-        - success: Boolean indicating if download was successful
+        - success: True only when the query and all downloads completed
+        - status: complete, partial, or error
+        - query_status: Whether the source query completed
+        - files / failures: Successful paths and per-attachment errors
+        - failed: Number of failed attachments
         - stock_code: The stock code
         - report_type: The requested report type
         - year: The filtered year (if any)
@@ -137,7 +163,7 @@ def download_annual_reports_tool(
     """
     try:
         output_dir = save_path or saving_path
-        os.makedirs(output_dir, exist_ok=True)
+        stock_code = normalize_stock_code(stock_code)
 
         result = download_reports(
             stock_code, report_type, year=year, save_path=output_dir
@@ -151,10 +177,15 @@ def download_annual_reports_tool(
     except Exception as e:
         return {
             "success": False,
+            "status": "error",
             "stock_code": stock_code,
             "report_type": report_type,
             "year": year,
             "downloaded": 0,
+            "files": [],
+            "failed": 0,
+            "failures": [],
+            "query_status": "error",
             "path": save_path or saving_path,
             "error": str(e),
             "message": f"Error downloading reports: {str(e)}. Supported report_type values: {_supported_report_types_text()}",
@@ -165,12 +196,21 @@ def download_annual_reports_tool(
 def get_annual_reports_list(stock_code: str) -> str:
     """返回指定股票代码的年度报告格式化列表"""
     try:
-        reports = query_reports(stock_code, "annual")
+        warning = ""
+        try:
+            reports = query_reports(stock_code, "annual")
+        except QueryError as exc:
+            reports = exc.reports
+            warning = f"Query incomplete ({exc.status}): {exc}"
 
+        if not reports and warning:
+            return warning
         if not reports:
             return f"No annual reports found for stock {stock_code}"
 
         output = [f"Annual Reports for {stock_code}:", "=" * 60]
+        if warning:
+            output.append(warning)
 
         for report in reports:
             title = report.get("announcementTitle", "N/A")

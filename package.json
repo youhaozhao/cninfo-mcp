@@ -40,7 +40,7 @@
     "postinstall": "node scripts/install-python-deps.js",
     "start": "node bin/cninfo-mcp.js",
     "dev": "node bin/cninfo-mcp.js",
-    "test": "python3 -m pytest python/test_spider.py -q"
+    "test": "python3 -m pytest python -q && node --test scripts/test-launcher.js"
   },
   "dependencies": {
     "spawn-please": "^2.0.2"

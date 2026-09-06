@@ -16,7 +16,7 @@ const REQUIREMENTS_FILE = path.join(
   "requirements.txt",
 );
 
-const VENV_DIR = path.join(os.homedir(), ".cninfo-mcp", "venv");
+let VENV_DIR = path.join(os.homedir(), ".cninfo-mcp", "venv");
 
 // 依赖探针：校验 venv 是否满足 requirements.txt 的全部约束
 const DEPS_CHECK = path.join(__dirname, "..", "python", "check_deps.py");
@@ -26,6 +26,26 @@ function getVenvPython() {
     return path.join(VENV_DIR, "Scripts", "python.exe");
   }
   return path.join(VENV_DIR, "bin", "python3");
+}
+
+async function isSupportedPython(cmd) {
+  try {
+    const result = await spawnCommand(cmd, ["--version"]);
+    const version = `${result.stdout || ""} ${result.stderr || ""}`.match(/\bPython (\d+)\.(\d+)\.(\d+)\b/);
+    return Boolean(version && Number(version[1]) === 3 && Number(version[2]) >= 10);
+  } catch {
+    return false;
+  }
+}
+
+// Preserve an obsolete environment and create a compatible sibling if needed.
+async function reusableVenv() {
+  if (!fs.existsSync(getVenvPython())) return null;
+  if (await isSupportedPython(getVenvPython())) return getVenvPython();
+  VENV_DIR += "-py310";
+  if (!fs.existsSync(getVenvPython())) return null;
+  if (await isSupportedPython(getVenvPython())) return getVenvPython();
+  throw new Error(`Unsupported or broken Python environment at ${VENV_DIR}. Recreate it with Python 3.10+.`);
 }
 
 async function findPython() {
@@ -38,22 +58,18 @@ async function findPython() {
   ];
 
   for (const cmd of pythonCommands) {
-    try {
-      const result = await spawnCommand(cmd, ["--version"]);
-      if (result.stdout && result.stdout.includes("Python")) {
-        return cmd;
-      }
-    } catch (error) {}
+    if (await isSupportedPython(cmd)) return cmd;
   }
 
   return null;
 }
 
-function spawnCommand(cmd, args) {
+function spawnCommand(cmd, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, {
       stdio: "pipe",
-      shell: process.platform === "win32",
+      ...options,
+      shell: false,
     });
     let stdout = "";
     let stderr = "";
@@ -79,18 +95,14 @@ async function main() {
     return;
   }
 
-  const pythonCmd = await findPython();
-  if (!pythonCmd) {
-    console.warn(
-      "⚠️  Python not found. Python dependencies will be installed on first run.",
-    );
-    console.warn("   Please install Python 3.10+ from https://python.org");
-    return;
-  }
-
-  // 创建虚拟环境（如果不存在）
-  const venvPython = getVenvPython();
-  if (!fs.existsSync(venvPython)) {
+  let venvPython = await reusableVenv();
+  if (!venvPython) {
+    const pythonCmd = await findPython();
+    if (!pythonCmd) {
+      console.warn("⚠️  Python 3.10+ not found. Dependencies will be installed on first run.");
+      return;
+    }
+    venvPython = getVenvPython();
     console.log("Creating Python virtual environment...");
     try {
       fs.mkdirSync(path.dirname(VENV_DIR), { recursive: true });

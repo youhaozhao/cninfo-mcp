@@ -20,7 +20,7 @@ const PYTHON_REQUIREMENTS = path.join(
 );
 
 // 虚拟环境目录，放在用户目录下保证跨 npx 调用持久化
-const VENV_DIR = path.join(os.homedir(), ".cninfo-mcp", "venv");
+let VENV_DIR = path.join(os.homedir(), ".cninfo-mcp", "venv");
 
 // 获取虚拟环境中的 Python 可执行文件路径
 function getVenvPython() {
@@ -31,6 +31,26 @@ function getVenvPython() {
 }
 
 // 查找可用的系统 Python 可执行文件（仅用于创建 venv）
+async function isSupportedPython(cmd) {
+  try {
+    const result = await spawnAsync(cmd, ["--version"]);
+    const version = `${result.stdout || ""} ${result.stderr || ""}`.match(/\bPython (\d+)\.(\d+)\.(\d+)\b/);
+    return Boolean(version && Number(version[1]) === 3 && Number(version[2]) >= 10);
+  } catch {
+    return false;
+  }
+}
+
+// Preserve an obsolete environment and create a compatible sibling if needed.
+async function reusableVenv() {
+  if (!fs.existsSync(getVenvPython())) return null;
+  if (await isSupportedPython(getVenvPython())) return getVenvPython();
+  VENV_DIR += "-py310";
+  if (!fs.existsSync(getVenvPython())) return null;
+  if (await isSupportedPython(getVenvPython())) return getVenvPython();
+  throw new Error(`Unsupported or broken Python environment at ${VENV_DIR}. Recreate it with Python 3.10+.`);
+}
+
 async function findPython() {
   const pythonCommands = [
     "python3",
@@ -41,14 +61,7 @@ async function findPython() {
   ];
 
   for (const cmd of pythonCommands) {
-    try {
-      const result = await spawnAsync(cmd, ["--version"]);
-      if (result.stdout && result.stdout.includes("Python")) {
-        return cmd;
-      }
-    } catch (error) {
-      // 继续尝试下一个命令
-    }
+    if (await isSupportedPython(cmd)) return cmd;
   }
 
   throw new Error(
@@ -67,7 +80,7 @@ async function ensureVenv(systemPythonCmd) {
   console.error("Creating Python virtual environment...");
   fs.mkdirSync(path.dirname(VENV_DIR), { recursive: true });
   await spawnAsync(systemPythonCmd, ["-m", "venv", VENV_DIR], {
-    stdio: "inherit",
+    stdio: ["ignore", 2, 2],
   });
   console.error("Virtual environment created\n");
   return venvPython;
@@ -96,7 +109,7 @@ async function ensureDependencies(venvPython) {
         venvPython,
         ["-m", "pip", "install", "-r", requirementsPath],
         {
-          stdio: "inherit",
+          stdio: ["ignore", 2, 2],
         },
       );
       console.error("Python dependencies installed successfully\n");
@@ -114,7 +127,7 @@ function spawnAsync(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       stdio: options.stdio || "pipe",
-      shell: process.platform === "win32",
+      shell: false,
       ...options,
     });
 
@@ -161,15 +174,14 @@ async function main() {
       process.exit(1);
     }
 
-    const systemPython = await findPython();
-    const venvPython = await ensureVenv(systemPython);
+    const venvPython = (await reusableVenv()) || (await ensureVenv(await findPython()));
     await ensureDependencies(venvPython);
 
     // 启动 MCP 服务器
     console.error("巨潮资讯 MCP 服务器已启动，等待连接...");
     const child = spawn(venvPython, [PYTHON_SCRIPT], {
       stdio: "inherit",
-      shell: process.platform === "win32",
+      shell: false,
       env: {
         ...process.env,
         PYTHONPATH: path.join(__dirname, "..", "python"),

@@ -157,7 +157,194 @@ def test_matches_year_non_prospectus_uses_title():
     assert _matches_year(ann, "annual", 2023) is False
 
 
+# Failure-path regressions use only mocked HTTP responses.
+import os
+from pathlib import Path
+from unittest.mock import Mock
+
+import requests
 import spider
+
+
+def report(url="a.pdf", code="000001"):
+    return {
+        "secCode": code,
+        "secName": "公司",
+        "announcementTitle": "2024年年度报告",
+        "adjunctUrl": url,
+    }
+
+
+@pytest.mark.parametrize(
+    "code",
+    ["", "  ", None, "abc", "00001", "0000001", "SZ000001", "０００００１", "000 001"],
+)
+def test_invalid_stock_has_no_side_effects(monkeypatch, tmp_path, code):
+    def unexpected(*args, **kwargs):
+        pytest.fail("Invalid input must not make requests")
+
+    monkeypatch.setattr(spider.requests, "post", unexpected)
+    target = tmp_path / "downloads"
+    with pytest.raises(ValueError, match="six ASCII digits"):
+        spider.download_reports(code, save_path=str(target))
+    assert not target.exists()
+
+
+def test_normalized_code_scopes_query_and_filter(monkeypatch):
+    seen = []
+
+    def fetch(page, code, *args):
+        seen.append(code)
+        return [report(), report(code="000002")]
+
+    monkeypatch.setattr(spider, "_query_exchange_report", fetch)
+    assert spider.query_reports(" 000001 ") == [report()]
+    assert seen == ["000001", "000001"]
+
+
+def test_query_outage_is_not_empty_success(monkeypatch):
+    monkeypatch.setattr(
+        spider, "_query_exchange_report", Mock(side_effect=requests.Timeout("offline"))
+    )
+    with pytest.raises(spider.QueryError) as caught:
+        spider.query_reports("000001")
+    assert caught.value.status == "error"
+    assert caught.value.reports == []
+    assert len(caught.value.errors) == 2
+
+
+def test_query_preserves_page_one(monkeypatch):
+    rows = [report(f"{i}.pdf") for i in range(spider.PAGE_SIZE)]
+
+    def fetch(page, code, kind, column, plate):
+        if column == "szse":
+            return []
+        if page == 2:
+            raise requests.Timeout("page two")
+        return rows
+
+    monkeypatch.setattr(spider, "_query_exchange_report", fetch)
+    with pytest.raises(spider.QueryError) as caught:
+        spider.query_reports("000001")
+    assert caught.value.status == "partial"
+    assert caught.value.reports == rows
+    assert "page 2" in str(caught.value)
+
+
+def test_pagination_limit_is_partial(monkeypatch):
+    monkeypatch.setattr(spider, "MAX_PAGES", 1)
+    with pytest.raises(spider.QueryError, match="Pagination limit") as caught:
+        spider._paginate(lambda *args: [report()] * spider.PAGE_SIZE, "000001")
+    assert len(caught.value.reports) == spider.PAGE_SIZE
+
+
+def test_bse_resolution_failure_surfaces(monkeypatch):
+    monkeypatch.setattr(spider, "_query_exchange_report", lambda *a: [])
+    monkeypatch.setattr(
+        spider, "_post_json", Mock(side_effect=requests.Timeout("org offline"))
+    )
+    with pytest.raises(spider.QueryError, match="org offline"):
+        spider.query_reports("920001")
+
+
+def test_bse_migrated_code_remains_allowed(monkeypatch):
+    monkeypatch.setattr(spider, "_resolve_org_id", lambda code: ("920001", "org123"))
+
+    def fetch(page, code, kind, column, plate, **kwargs):
+        if column == "bj":
+            assert kwargs["stock_value"] == "920001,org123"
+            return [report(code="920001"), report(code="920002")]
+        return []
+
+    monkeypatch.setattr(spider, "_query_exchange_report", fetch)
+    assert spider.query_reports("830001") == [report(code="920001")]
+
+
+@pytest.fixture
+def pdf_http(monkeypatch):
+    monkeypatch.setattr(spider.time, "sleep", lambda *a: None)
+
+    def response(body=b"%PDF-1.7\nexample", content_type="application/pdf"):
+        result = Mock(
+            content=body, headers={"Content-Type": content_type}, status_code=200
+        )
+        result.raise_for_status.return_value = None
+        return result
+
+    return response
+
+
+def test_distinct_attachments_and_atomic_failure(monkeypatch, tmp_path, pdf_http):
+    monkeypatch.setattr(
+        spider.requests,
+        "get",
+        Mock(side_effect=[pdf_http(b"%PDF-first"), pdf_http(b"%PDF-second")]),
+    )
+    rows = [report("one.pdf"), report("two.pdf")]
+    result = spider.Download(rows, save_path=str(tmp_path), details=True)
+    paths = [Path(f["path"]) for f in result["files"]]
+    assert result["downloaded"] == 2
+    assert paths[0] != paths[1]
+    assert [p.read_bytes() for p in paths] == [b"%PDF-first", b"%PDF-second"]
+    monkeypatch.setattr(
+        spider.requests, "get", lambda *a, **kw: pdf_http(b"%PDF-replacement")
+    )
+    monkeypatch.setattr(spider.os, "replace", Mock(side_effect=OSError("disk error")))
+    result = spider.Download(rows[:1], save_path=str(tmp_path), details=True)
+    assert result["failed"] == 1
+    assert paths[0].read_bytes() == b"%PDF-first"
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_download_continues_after_failure(monkeypatch, tmp_path, pdf_http):
+    monkeypatch.setattr(
+        spider, "query_reports", lambda *a: [report(f"{i}.pdf") for i in range(3)]
+    )
+    get = Mock(
+        side_effect=[pdf_http()]
+        + [requests.Timeout("timeout")] * spider.MAX_RETRIES
+        + [pdf_http()]
+    )
+    monkeypatch.setattr(spider.requests, "get", get)
+    result = spider.download_reports("000001", save_path=str(tmp_path))
+    assert result["downloaded"] == 2
+    assert result["failed"] == 1
+    assert result["status"] == "partial"
+    assert result["success"] is False
+    assert result["failures"][0]["adjunctUrl"] == "1.pdf"
+    assert len(list(tmp_path.glob("*.pdf"))) == 2
+    assert get.call_count == 2 + spider.MAX_RETRIES
+
+
+@pytest.mark.parametrize(
+    "body,kind",
+    [
+        (b"", "application/pdf"),
+        (b"<html>denied</html>", "application/pdf"),
+        (b"%PDF-fake", "text/html"),
+    ],
+)
+def test_invalid_pdf_not_saved(monkeypatch, tmp_path, pdf_http, body, kind):
+    get = Mock(return_value=pdf_http(body, kind))
+    monkeypatch.setattr(spider.requests, "get", get)
+    result = spider.Download([report()], save_path=str(tmp_path), details=True)
+    assert result["downloaded"] == 0
+    assert result["failed"] == 1
+    assert not list(tmp_path.iterdir())
+    assert get.call_count == 1
+
+
+def test_partial_query_can_download_retained_reports(monkeypatch, tmp_path, pdf_http):
+    monkeypatch.setattr(
+        spider,
+        "query_reports",
+        Mock(side_effect=spider.QueryError(["page 2 failed"], [report()], True)),
+    )
+    monkeypatch.setattr(spider.requests, "get", lambda *a, **kw: pdf_http())
+    result = spider.download_reports("000001", save_path=str(tmp_path))
+    assert result["downloaded"] == 1
+    assert result["query_status"] == result["status"] == "partial"
+    assert result["query_errors"] == ["page 2 failed"]
 
 
 @pytest.mark.parametrize(
@@ -181,9 +368,6 @@ def test_prospectus_document_versions(suffix):
     )
 
 
-import os
-
-
 @pytest.mark.skipif(not hasattr(spider.time, "tzset"), reason="tzset unavailable")
 @pytest.mark.parametrize("zone", ["Asia/Shanghai", "UTC", "America/Edmonton"])
 def test_prospectus_china_new_year(monkeypatch, zone):
@@ -204,3 +388,128 @@ def test_prospectus_china_new_year(monkeypatch, zone):
         else:
             os.environ["TZ"] = previous
         spider.time.tzset()
+
+
+@pytest.mark.parametrize(
+    "status,attempts,downloaded", [(404, 1, 0), (429, 2, 1), (503, 2, 1)]
+)
+def test_download_http_retry_policy(
+    monkeypatch, tmp_path, pdf_http, status, attempts, downloaded
+):
+    bad = requests.Response()
+    bad.status_code = status
+    bad._content = b"error"
+    bad._content_consumed = True
+    get = Mock(side_effect=[bad, pdf_http()])
+    monkeypatch.setattr(spider.requests, "get", get)
+    result = spider.Download([report()], save_path=str(tmp_path), details=True)
+    assert get.call_count == attempts
+    assert result["downloaded"] == downloaded
+
+
+def test_download_empty_query_is_complete(monkeypatch, tmp_path):
+    monkeypatch.setattr(spider, "query_reports", lambda *args: [])
+    target = tmp_path / "absent"
+    result = spider.download_reports("000001", save_path=str(target))
+    assert result["success"] is True
+    assert result["status"] == "complete"
+    assert result["downloaded"] == result["failed"] == 0
+    assert not target.exists()
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "folder/report.pdf",
+        "/folder/report.pdf",
+        "https://static.cninfo.com.cn/folder/report.pdf",
+        "//static.cninfo.com.cn/folder/report.pdf",
+    ],
+)
+def test_attachment_urls_shared_by_format_and_download(
+    monkeypatch, tmp_path, pdf_http, value
+):
+    expected = "https://static.cninfo.com.cn/folder/report.pdf"
+    assert spider.format_reports([report(value)])[0]["adjunctUrl"] == expected
+    get = Mock(return_value=pdf_http())
+    monkeypatch.setattr(spider.requests, "get", get)
+    assert spider.Download([report(value)], save_path=str(tmp_path)) == 1
+    assert get.call_args.args[0] == expected
+    assert get.call_args.kwargs["allow_redirects"] is False
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "https://example.org/report.pdf",
+        "//127.0.0.1/report.pdf",
+        "https://static.cninfo.com.cn.example.org/report.pdf",
+        "https://static.cninfo.com.cn@evil.example/report.pdf",
+        "https://user@static.cninfo.com.cn/report.pdf",
+        "https://static.cninfo.com.cn:8443/report.pdf",
+        "http://static.cninfo.com.cn/report.pdf",
+        "file:///etc/passwd",
+        "https://static.cninfo.com.cn\\@evil.example/report.pdf",
+        "https://static.cninfo.com.cn/\nreport.pdf",
+    ],
+)
+def test_unsafe_attachment_never_requested_or_linked(monkeypatch, tmp_path, value):
+    get = Mock(side_effect=AssertionError("must not request unsafe URL"))
+    monkeypatch.setattr(spider.requests, "get", get)
+    formatted = spider.format_reports([report(value)])[0]
+    assert formatted["adjunctUrl"] == ""
+    assert formatted["attachmentError"]
+    result = spider.Download([report(value)], save_path=str(tmp_path), details=True)
+    assert result["failed"] == 1
+    assert result["downloaded"] == 0
+    get.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        "https://evil.example/a.pdf",
+        "//127.0.0.1/a.pdf",
+        "http://static.cninfo.com.cn/a.pdf",
+        "",
+    ],
+)
+def test_redirect_rejected_before_following(monkeypatch, pdf_http, location):
+    redirect = Mock(status_code=302, headers={"Location": location})
+    get = Mock(return_value=redirect)
+    monkeypatch.setattr(spider.requests, "get", get)
+    with pytest.raises(ValueError):
+        spider._fetch_pdf("https://static.cninfo.com.cn/a.pdf")
+    assert get.call_count == 1
+    assert get.call_args.kwargs["allow_redirects"] is False
+    redirect.close.assert_called_once()
+
+
+def test_safe_relative_redirects_and_later_unsafe_hop(monkeypatch, pdf_http):
+    first = Mock(status_code=302, headers={"Location": "../new.pdf"})
+    good = pdf_http()
+    get = Mock(side_effect=[first, good])
+    monkeypatch.setattr(spider.requests, "get", get)
+    assert spider._fetch_pdf("https://static.cninfo.com.cn/folder/a.pdf").startswith(
+        b"%PDF-"
+    )
+    assert get.call_args_list[1].args[0] == "https://static.cninfo.com.cn/new.pdf"
+    first.close.assert_called_once()
+    good.close.assert_called_once()
+    second = Mock(status_code=307, headers={"Location": "https://evil.example/a.pdf"})
+    get.reset_mock(side_effect=True)
+    get.side_effect = [first, second]
+    with pytest.raises(ValueError):
+        spider._fetch_pdf("https://static.cninfo.com.cn/folder/a.pdf")
+    assert get.call_count == 2
+    second.close.assert_called_once()
+
+
+def test_redirect_loop_is_bounded(monkeypatch, pdf_http):
+    response = Mock(status_code=308, headers={"Location": "/loop.pdf"})
+    get = Mock(return_value=response)
+    monkeypatch.setattr(spider.requests, "get", get)
+    with pytest.raises(ValueError, match="Too many"):
+        spider._fetch_pdf("loop.pdf")
+    assert get.call_count == 6
+    assert response.close.call_count == 6

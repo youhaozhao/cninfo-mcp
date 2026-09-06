@@ -3,12 +3,15 @@
 """
 
 import datetime
+import hashlib
 import logging
 import os
 import random
 import re
+import tempfile
 import time
 from typing import Optional, Union
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import requests
 
@@ -167,6 +170,46 @@ def normalize_report_type(report_type: Optional[str]) -> str:
     return normalized
 
 
+def normalize_stock_code(stock_code) -> str:
+    """Require a six-digit security code; preserve leading zeroes."""
+    code = str(stock_code).strip()
+    if not re.fullmatch(r"[0-9]{6}", code):
+        raise ValueError("stock_code must contain exactly six ASCII digits")
+    return code
+
+
+class QueryError(RuntimeError):
+    """An incomplete query, optionally carrying already fetched reports."""
+
+    def __init__(self, errors, reports=None, partial=False):
+        self.errors = errors
+        self.reports = reports or []
+        self.status = "partial" if partial else "error"
+        super().__init__("; ".join(errors))
+
+
+def resolve_attachment_url(value: str, base: str = download_path) -> str:
+    """Resolve attachment paths, allowing only HTTPS on CNINFO's static host."""
+    if (
+        not isinstance(value, str)
+        or not value
+        or re.search(r"[\s\\\x00-\x1f\x7f]", value)
+    ):
+        raise ValueError("Invalid attachment URL")
+    parsed = urlsplit(urljoin(base, value))
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != "static.cninfo.com.cn"
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.port not in (None, 443)
+    ):
+        raise ValueError("Attachment URLs must use https://static.cninfo.com.cn")
+    return urlunsplit(
+        ("https", "static.cninfo.com.cn", parsed.path or "/", parsed.query, "")
+    )
+
+
 def format_reports(reports: list) -> list:
     """提取公告中稳定、有用的字段，并把附件路径补全为可访问的绝对 URL。
 
@@ -176,15 +219,23 @@ def format_reports(reports: list) -> list:
     formatted = []
     for report in reports:
         adj = report.get("adjunctUrl", "")
+        attachment_error = None
+        try:
+            url = resolve_attachment_url(adj) if adj else ""
+        except ValueError as exc:
+            url = ""
+            attachment_error = str(exc)
         formatted.append(
             {
                 "announcementTitle": report.get("announcementTitle", ""),
                 "announcementTime": report.get("announcementTime", ""),
                 "secCode": report.get("secCode", ""),
                 "secName": report.get("secName", ""),
-                "adjunctUrl": download_path + adj if adj else "",
+                "adjunctUrl": url,
             }
         )
+        if attachment_error:
+            formatted[-1]["attachmentError"] = attachment_error
     return formatted
 
 
@@ -229,9 +280,12 @@ def _post_json(url: str, data: dict) -> dict:
 def _query_announcements(query: dict) -> list:
     """调用公告查询接口并返回 announcements 列表（带重试）。"""
     result = _post_json(QUERY_URL, query)
-    if result and "announcements" in result and result["announcements"]:
-        return result["announcements"]
-    return []
+    if not isinstance(result, dict) or "announcements" not in result:
+        raise ValueError("Invalid announcement response")
+    items = result["announcements"]
+    if items is not None and not isinstance(items, list):
+        raise ValueError("Invalid announcements list")
+    return items or []
 
 
 def _is_bse_code(stock_code) -> bool:
@@ -253,13 +307,10 @@ def _resolve_org_id(stock_code) -> Optional[tuple]:
     优先返回 code 完全等于输入的条目；找不到精确匹配则取第一条
     （同一公司新旧代码共用同一 orgId）。无结果返回 None。
     """
-    try:
-        hits = _post_json(TOP_SEARCH_URL, {"keyWord": stock_code, "maxNum": 10})
-    except Exception as e:
-        logger.warning("orgId 解析失败（%s）: %s", stock_code, e)
-        return None
-
-    if not isinstance(hits, list) or not hits:
+    hits = _post_json(TOP_SEARCH_URL, {"keyWord": stock_code, "maxNum": 10})
+    if not isinstance(hits, list):
+        raise ValueError("Invalid orgId response")
+    if not hits:
         return None
 
     target = re.sub(r"\D", "", str(stock_code or ""))
@@ -288,14 +339,17 @@ def _paginate(fetch_fn, stock):
     """
     all_items = []
     for page in range(1, MAX_PAGES + 1):
-        items = fetch_fn(page, stock)
+        try:
+            items = fetch_fn(page, stock)
+        except Exception as exc:
+            raise QueryError([f"page {page}: {exc}"], all_items, page > 1) from exc
         if not items:
             break
         all_items.extend(items)
         if len(items) < PAGE_SIZE:
             break
     else:
-        logger.warning("翻页达到上限 %s，结果可能被截断（%s）", MAX_PAGES, stock)
+        raise QueryError([f"Pagination limit reached ({MAX_PAGES})"], all_items, True)
     return all_items
 
 
@@ -453,68 +507,141 @@ def sseStock(page, stock):
     return _query_exchange_report(page, stock, "prospectus", "sse", "sh")
 
 
+def _get_attachment(url):
+    """Follow at most five redirects, validating before every network request."""
+    url = resolve_attachment_url(url)
+    for redirects in range(6):
+        response = requests.get(
+            url,
+            headers={"User-Agent": random.choice(User_Agent)},
+            timeout=30,
+            allow_redirects=False,
+        )
+        if response.status_code not in (301, 302, 303, 307, 308):
+            return response
+        try:
+            if redirects == 5:
+                raise ValueError("Too many attachment redirects")
+            url = resolve_attachment_url(response.headers.get("Location", ""), base=url)
+        finally:
+            response.close()
+    raise RuntimeError("Attachment redirect handling failed")
+
+
+def _fetch_pdf(url):
+    for attempt in range(MAX_RETRIES):
+        try:
+            response = _get_attachment(url)
+            try:
+                response.raise_for_status()
+                content = response.content
+                content_type = (
+                    response.headers.get("Content-Type", "")
+                    .lower()
+                    .split(";", 1)[0]
+                    .strip()
+                )
+                if content_type and content_type not in (
+                    "application/pdf",
+                    "application/octet-stream",
+                    "binary/octet-stream",
+                    "application/x-pdf",
+                ):
+                    raise ValueError(f"Unexpected PDF content type: {content_type}")
+                if not content.startswith(b"%PDF-"):
+                    raise ValueError("Empty or non-PDF response")
+                return content
+            finally:
+                response.close()
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
+            if attempt == MAX_RETRIES - 1:
+                raise
+        except requests.exceptions.HTTPError as exc:
+            status = exc.response.status_code if exc.response is not None else None
+            if status != 429 and (status is None or status < 500):
+                raise
+            if attempt == MAX_RETRIES - 1:
+                raise
+        time.sleep(RETRY_BACKOFF * (2**attempt) + random.random())
+    raise RuntimeError("No download attempts configured")
+
+
 def Download(
     single_page,
     report_type: Optional[str] = None,
     year_filter: Optional[Union[int, str]] = None,
     save_path: Optional[str] = None,
+    *,
+    details=False,
 ):
-    """下载公告列表中的 PDF 文件。"""
-    if single_page is None:
-        return 0
-
-    output_dir = (save_path or saving_path).rstrip("/\\") + "/"
-    downloaded_count = 0
+    """Download independently and atomically; legacy callers receive a count."""
+    output_dir = save_path or saving_path
+    files, failures = [], []
     normalized_type = normalize_report_type(report_type) if report_type else None
-
-    for i in single_page:
-        title = i.get("announcementTitle", "")
-        if normalized_type:
-            should_download = _is_report_title(
-                title, normalized_type, year_filter=year_filter
-            )
-        else:
-            should_download = any(
-                _is_report_title(title, candidate, year_filter=year_filter)
-                for candidate in REPORT_TYPE_SPECS
-            )
-
-        if not should_download:
+    for report in single_page or []:
+        title = report.get("announcementTitle", "")
+        types = [normalized_type] if normalized_type else REPORT_TYPE_SPECS
+        if not any(_is_report_title(title, kind, year_filter) for kind in types):
             continue
-
-        adjunct_url = i.get("adjunctUrl", "")
-        if not adjunct_url:
-            logger.warning("公告缺少 adjunctUrl，跳过：%s", title)
-            continue
-
-        download = download_path + adjunct_url
-        name = _sanitize_filename(
-            i.get("secCode", "") + "_" + i.get("secName", "") + "_" + title + ".pdf"
-        )
-        file_path = output_dir + name
-
-        logger.info("↓ %s", name)
-        os.makedirs(output_dir, exist_ok=True)
-
-        time.sleep(random.random() * 2)
-
-        r = requests.get(
-            download, headers={"User-Agent": random.choice(User_Agent)}, timeout=30
-        )
-        r.raise_for_status()
-        with open(file_path, "wb") as f:
-            f.write(r.content)
-        downloaded_count += 1
-
-    return downloaded_count
+        adjunct_url = report.get("adjunctUrl", "")
+        temporary_path = None
+        try:
+            if not adjunct_url:
+                raise ValueError("Missing adjunctUrl")
+            url = resolve_attachment_url(adjunct_url)
+            # Full attachment digest keeps distinct URLs distinct, even with identical titles.
+            attachment_id = hashlib.sha256(adjunct_url.encode("utf-8")).hexdigest()
+            stem = _sanitize_filename(
+                f"{report.get('secCode', '')}_{report.get('secName', '')}_{title}"
+            )
+            # Leave room for the digest on filesystems with a 255-byte name limit.
+            stem = stem.encode("utf-8")[:160].decode("utf-8", errors="ignore")
+            file_path = os.path.join(output_dir, f"{stem}_{attachment_id}.pdf")
+            time.sleep(random.random() * 2)
+            content = _fetch_pdf(url)
+            os.makedirs(output_dir, exist_ok=True)
+            with tempfile.NamedTemporaryFile(
+                dir=output_dir, suffix=".tmp", delete=False
+            ) as fh:
+                temporary_path = fh.name
+                fh.write(content)
+            os.replace(temporary_path, file_path)
+            temporary_path = None
+            files.append({"adjunctUrl": adjunct_url, "path": file_path})
+        except Exception as exc:
+            failures.append(
+                {
+                    "adjunctUrl": adjunct_url,
+                    "announcementTitle": title,
+                    "error": str(exc),
+                }
+            )
+            logger.warning("Download failed (%s): %s", title, exc)
+        finally:
+            if temporary_path is not None:
+                try:
+                    os.unlink(temporary_path)
+                except OSError as exc:
+                    logger.warning(
+                        "Could not remove temporary file %s: %s", temporary_path, exc
+                    )
+    result = {
+        "downloaded": len(files),
+        "files": files,
+        "failed": len(failures),
+        "failures": failures,
+    }
+    return result if details else len(files)
 
 
 def query_reports(stock_code, report_type="annual", year=None):
-    """查询指定股票和报告类型的公告列表。"""
+    """Return complete results or raise QueryError carrying partial reports."""
+    stock_code = normalize_stock_code(stock_code)
     normalized_type = normalize_report_type(report_type)
     all_announcements = []
-    requested_code = re.sub(r"\D", "", str(stock_code or ""))
-    allowed_sec_codes = {requested_code} if requested_code else set()
+    allowed_sec_codes = {stock_code}
+    errors = []
+    partial = False
 
     exchanges = [
         ("sse", "sh", "沪市"),
@@ -526,7 +653,12 @@ def query_reports(stock_code, report_type="annual", year=None):
                 page, stock_code, normalized_type, c, p
             )
             all_announcements.extend(_paginate(fetch_fn, stock_code))
+            partial = True
         except Exception as e:
+            errors.append(f"{label}: {e}")
+            if isinstance(e, QueryError):
+                all_announcements.extend(e.reports)
+                partial = partial or e.status == "partial"
             logger.warning(
                 "%s%s查询失败: %s",
                 label,
@@ -550,7 +682,14 @@ def query_reports(stock_code, report_type="annual", year=None):
                     stock_value=stock_value,
                 )
                 all_announcements.extend(_paginate(fetch_fn, stock_value))
+                partial = True
+            else:
+                raise ValueError(f"Could not resolve orgId for {stock_code}")
         except Exception as e:
+            errors.append(f"北交所: {e}")
+            if isinstance(e, QueryError):
+                all_announcements.extend(e.reports)
+                partial = partial or e.status == "partial"
             logger.warning(
                 "北交所%s查询失败: %s",
                 REPORT_TYPE_SPECS[normalized_type]["label"],
@@ -580,41 +719,43 @@ def query_reports(stock_code, report_type="annual", year=None):
             continue
         filtered.append(announcement)
 
+    if errors:
+        raise QueryError(errors, filtered, partial)
     return filtered
 
 
 def download_reports(stock_code, report_type="annual", year=None, save_path=None):
     """下载指定股票和报告类型的 PDF。"""
+    stock_code = normalize_stock_code(stock_code)
     normalized_type = normalize_report_type(report_type)
-    label = REPORT_TYPE_SPECS[normalized_type]["label"]
-    announcements = query_reports(stock_code, normalized_type, year)
-
-    if not announcements:
-        return {
-            "success": False,
-            "message": f"未找到股票 {stock_code} 的{label}"
-            + (f"（{year} 年）" if year else ""),
-            "downloaded": 0,
-        }
-
+    query_error = None
+    try:
+        announcements = query_reports(stock_code, normalized_type, year)
+    except QueryError as exc:
+        query_error = exc
+        announcements = exc.reports
     output_dir = save_path or saving_path
-    count = Download(
-        announcements,
-        report_type=normalized_type,
-        year_filter=year,
-        save_path=output_dir,
+    result = Download(announcements, normalized_type, year, output_dir, details=True)
+    status = "complete"
+    if query_error or result["failed"]:
+        status = (
+            "partial"
+            if result["downloaded"] or (query_error and query_error.status == "partial")
+            else "error"
+        )
+    result.update(
+        success=status == "complete",
+        status=status,
+        query_status=query_error.status if query_error else "complete",
+        path=output_dir,
+        message=f"Downloaded {result['downloaded']} file(s); {result['failed']} failed. Status: {status}.",
     )
-
-    downloaded = count or 0
-    year_suffix = f"（{year} 年）" if year else ""
-    return {
-        "success": downloaded > 0,
-        "message": f"已下载 {stock_code} {label}{year_suffix}，共 {downloaded} 个文件"
-        if downloaded > 0
-        else f"未下载任何文件（{stock_code} {label}{year_suffix}）",
-        "downloaded": downloaded,
-        "path": output_dir,
-    }
+    if query_error:
+        result["query_errors"] = query_error.errors
+        result["error"] = str(query_error)
+    elif result["failed"]:
+        result["error"] = f"{result['failed']} download(s) failed"
+    return result
 
 
 def query_annual_reports(stock_code, year=None):

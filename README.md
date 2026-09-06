@@ -66,6 +66,15 @@
 
 爬虫逻辑基于 [gaodechen/cninfo_process](https://github.com/gaodechen/cninfo_process)。
 
+## 结果与错误
+
+股票代码必须为六位数字，可带首尾空白（如 `" 000001 "`）；无效输入在请求或创建目录前被拒绝。
+查询和下载结果包含 `status`：`complete` 表示完整完成（包括成功查询到零条），`partial` 表示部分完成，`error` 表示失败。只有 `complete` 的 `success` 为 `true`。
+查询中断时保留已取得的报告，并返回 `error` / `errors`；Python 的 `query_reports` 调用方可从 `QueryError.reports` 取得部分结果。
+下载返回 `downloaded`、`files`、`failed`、`failures`，另有 `query_status` 和查询失败时的 `query_errors`。单个附件失败后继续处理其余附件。
+文件名包含附件 URL 的稳定 SHA-256 标识；下载经 PDF 签名与响应类型检查后，使用临时文件原子替换。
+附件链接统一解析为 `https://static.cninfo.com.cn` 地址；下载最多跟随五次重定向，每一跳都校验协议、主机和端口。无效链接在查询结果中显示为空并附带 `attachmentError`，下载时作为单个附件失败返回。
+
 ## 开发测试
 
 在独立环境中安装运行依赖和 pytest 后执行全部 Python 与 Node 回归测试：

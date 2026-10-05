@@ -1,6 +1,7 @@
 {
   "name": "@youhaozhao/cninfo-mcp",
   "version": "1.4.1",
+  "mcpName": "io.github.youhaozhao/cninfo-mcp",
   "description": "MCP Server for querying and downloading Chinese listed companies' periodic reports from CNINFO (巨潮资讯网)",
   "keywords": [
     "mcp",
@@ -37,10 +38,9 @@
     "cninfo-mcp": "bin/cninfo-mcp.js"
   },
   "scripts": {
-    "postinstall": "node scripts/install-python-deps.js",
     "start": "node bin/cninfo-mcp.js",
     "dev": "node bin/cninfo-mcp.js",
-    "test": "python3 -m pytest python -q && node --test scripts/test-launcher.js"
+    "test": "python3 -m pytest python -q && node --test scripts/test-launcher.js scripts/test-manifest.js"
   },
   "dependencies": {
     "spawn-please": "^2.0.2"

@@ -190,6 +190,16 @@ def test_invalid_stock_has_no_side_effects(monkeypatch, tmp_path, code):
     assert not target.exists()
 
 
+def test_query_endpoints_use_https():
+    for value in (
+        spider.QUERY_URL,
+        spider.TOP_SEARCH_URL,
+        spider.BASE_HEADERS["Origin"],
+        spider.BASE_HEADERS["Referer"],
+    ):
+        assert value.startswith("https://www.cninfo.com.cn")
+
+
 def test_normalized_code_scopes_query_and_filter(monkeypatch):
     seen = []
 

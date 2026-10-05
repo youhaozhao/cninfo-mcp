@@ -2,7 +2,8 @@
 
 /**
  * 巨潮资讯 MCP 服务器启动器
- * 自动检测 Python 并安装依赖，然后启动 Python MCP 服务器。
+ * 只校验已有的 Python 环境并启动 Python MCP 服务器：不联网，不写用户目录。
+ * 环境由显式命令 `cninfo-mcp install` 准备（scripts/install-python-deps.js）。
  */
 
 const { spawn } = require("child_process");
@@ -12,12 +13,13 @@ const os = require("os");
 
 // 配置路径
 const PYTHON_SCRIPT = path.join(__dirname, "..", "python", "mcp_server.py");
-const PYTHON_REQUIREMENTS = path.join(
+const INSTALL_SCRIPT = path.join(
   __dirname,
   "..",
-  "python",
-  "requirements.txt",
+  "scripts",
+  "install-python-deps.js",
 );
+const INSTALL_COMMAND = "npx -y @youhaozhao/cninfo-mcp install";
 
 // 虚拟环境目录，放在用户目录下保证跨 npx 调用持久化
 let VENV_DIR = path.join(os.homedir(), ".cninfo-mcp", "venv");
@@ -30,7 +32,6 @@ function getVenvPython() {
   return path.join(VENV_DIR, "bin", "python3");
 }
 
-// 查找可用的系统 Python 可执行文件（仅用于创建 venv）
 async function isSupportedPython(cmd) {
   try {
     const result = await spawnAsync(cmd, ["--version"]);
@@ -41,7 +42,7 @@ async function isSupportedPython(cmd) {
   }
 }
 
-// Preserve an obsolete environment and create a compatible sibling if needed.
+// An obsolete environment is left intact; its compatible sibling is used instead.
 async function reusableVenv() {
   if (!fs.existsSync(getVenvPython())) return null;
   if (await isSupportedPython(getVenvPython())) return getVenvPython();
@@ -51,75 +52,45 @@ async function reusableVenv() {
   throw new Error(`Unsupported or broken Python environment at ${VENV_DIR}. Recreate it with Python 3.10+.`);
 }
 
-async function findPython() {
-  const pythonCommands = [
-    "python3",
-    "python",
-    "python3.12",
-    "python3.11",
-    "python3.10",
-  ];
-
-  for (const cmd of pythonCommands) {
-    if (await isSupportedPython(cmd)) return cmd;
-  }
-
-  throw new Error(
-    "Python not found. Please install Python 3.10+ from https://python.org\n" +
-      "After installation, restart your terminal and try again.",
-  );
-}
-
-// 创建虚拟环境（如果不存在）
-async function ensureVenv(systemPythonCmd) {
-  const venvPython = getVenvPython();
-  if (fs.existsSync(venvPython)) {
-    return venvPython;
-  }
-
-  console.error("Creating Python virtual environment...");
-  fs.mkdirSync(path.dirname(VENV_DIR), { recursive: true });
-  await spawnAsync(systemPythonCmd, ["-m", "venv", VENV_DIR], {
-    stdio: ["ignore", 2, 2],
-  });
-  console.error("Virtual environment created\n");
-  return venvPython;
-}
-
 // 依赖探针：校验 venv 是否满足 requirements.txt 的全部约束
 const DEPS_CHECK = path.join(__dirname, "..", "python", "check_deps.py");
 
-// 检查并安装 Python 依赖（使用 venv 中的 python）
-async function ensureDependencies(venvPython) {
-  const requirementsPath = PYTHON_REQUIREMENTS;
-
-  if (!fs.existsSync(requirementsPath)) {
-    console.error("Error: requirements.txt not found at", requirementsPath);
-    process.exit(1);
+// 只读校验：环境缺失或依赖不满足时报错并给出安装命令，不在启动阶段安装
+async function requireEnvironment() {
+  const venvPython = await reusableVenv();
+  if (!venvPython) {
+    throw new Error(
+      "Python environment for cninfo-mcp is not installed.\n" +
+        `Run this once, then restart the MCP client: ${INSTALL_COMMAND}`,
+    );
   }
 
   try {
-    // 校验依赖是否满足约束（不满足时抛错，转入下方安装流程）
     await spawnAsync(venvPython, [DEPS_CHECK]);
-  } catch (error) {
-    // 未安装，执行安装
-    console.error("Installing Python dependencies...");
-    try {
-      await spawnAsync(
-        venvPython,
-        ["-m", "pip", "install", "-r", requirementsPath],
-        {
-          stdio: ["ignore", 2, 2],
-        },
-      );
-      console.error("Python dependencies installed successfully\n");
-    } catch (installError) {
-      console.error("\n❌ Failed to install Python dependencies");
-      console.error("Please run manually:");
-      console.error(`  ${venvPython} -m pip install -r ${requirementsPath}`);
-      process.exit(1);
-    }
+  } catch {
+    throw new Error(
+      `Python dependencies in ${VENV_DIR} are missing or out of date.\n` +
+        `Run this, then restart the MCP client: ${INSTALL_COMMAND}`,
+    );
   }
+  return venvPython;
+}
+
+// 显式安装入口：唯一会联网并写用户目录的路径
+function runInstaller() {
+  const child = spawn(process.execPath, [INSTALL_SCRIPT], {
+    stdio: "inherit",
+    shell: false,
+  });
+
+  child.on("error", (error) => {
+    console.error("Failed to start installer:", error.message);
+    process.exit(1);
+  });
+
+  child.on("exit", (code) => {
+    process.exit(code ?? 1);
+  });
 }
 
 // 启动子进程并返回结果
@@ -168,14 +139,18 @@ function spawnAsync(command, args, options = {}) {
 
 async function main() {
   try {
+    if (process.argv[2] === "install") {
+      runInstaller();
+      return;
+    }
+
     // 检查 Python 脚本是否存在
     if (!fs.existsSync(PYTHON_SCRIPT)) {
       console.error("Error: mcp_server.py not found at", PYTHON_SCRIPT);
       process.exit(1);
     }
 
-    const venvPython = (await reusableVenv()) || (await ensureVenv(await findPython()));
-    await ensureDependencies(venvPython);
+    const venvPython = await requireEnvironment();
 
     // 启动 MCP 服务器
     console.error("巨潮资讯 MCP 服务器已启动，等待连接...");

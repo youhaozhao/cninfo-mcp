@@ -7,13 +7,13 @@
     "url": "https://github.com/youhaozhao/cninfo-mcp",
     "source": "github"
   },
-  "version": "1.4.1",
+  "version": "2.0.0",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@youhaozhao/cninfo-mcp",
-      "version": "1.4.1",
+      "version": "2.0.0",
       "transport": {
         "type": "stdio"
       },

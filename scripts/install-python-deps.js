@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 /**
- * npm install 后自动安装 Python 依赖
+ * 显式安装 Python 依赖：在用户目录创建 venv 并执行 pip install。
+ * 只由 `cninfo-mcp install` 触发；npm install 和服务器启动都不会运行它。
  */
 
 const { spawn } = require("child_process");
@@ -87,32 +88,23 @@ function spawnCommand(cmd, args, options = {}) {
 }
 
 async function main() {
-  // requirements.txt 不存在则跳过
   if (!fs.existsSync(REQUIREMENTS_FILE)) {
-    console.log(
-      "⚠️  requirements.txt not found, skipping Python dependencies installation",
-    );
-    return;
+    throw new Error(`requirements.txt not found at ${REQUIREMENTS_FILE}`);
   }
 
   let venvPython = await reusableVenv();
   if (!venvPython) {
     const pythonCmd = await findPython();
     if (!pythonCmd) {
-      console.warn("⚠️  Python 3.10+ not found. Dependencies will be installed on first run.");
-      return;
+      throw new Error(
+        "Python 3.10+ not found. Install it from https://python.org, then run this command again.",
+      );
     }
     venvPython = getVenvPython();
-    console.log("Creating Python virtual environment...");
-    try {
-      fs.mkdirSync(path.dirname(VENV_DIR), { recursive: true });
-      await spawnCommand(pythonCmd, ["-m", "venv", VENV_DIR]);
-      console.log("Virtual environment created");
-    } catch (venvError) {
-      console.warn("  Failed to create virtual environment during npm install");
-      console.warn("  It will be created automatically on first run");
-      return;
-    }
+    console.log(`Creating Python virtual environment at ${VENV_DIR}...`);
+    fs.mkdirSync(path.dirname(VENV_DIR), { recursive: true });
+    await spawnCommand(pythonCmd, ["-m", "venv", VENV_DIR]);
+    console.log("Virtual environment created");
   }
 
   try {
@@ -122,22 +114,18 @@ async function main() {
   } catch (error) {
     // 执行安装（用 venv 的 pip）
     console.log("📦 Installing Python dependencies...");
-    try {
-      await spawnCommand(
-        venvPython,
-        ["-m", "pip", "install", "-r", REQUIREMENTS_FILE],
-        {
-          stdio: "inherit",
-        },
-      );
-      console.log("✅ Python dependencies installed successfully");
-    } catch (installError) {
-      console.warn(
-        "⚠️  Failed to install Python dependencies during npm install",
-      );
-      console.warn("   They will be installed automatically on first run");
-    }
+    await spawnCommand(
+      venvPython,
+      ["-m", "pip", "install", "-r", REQUIREMENTS_FILE],
+      {
+        stdio: "inherit",
+      },
+    );
+    console.log("✅ Python dependencies installed successfully");
   }
 }
 
-main().catch(console.error);
+main().catch((error) => {
+  console.error(`❌ ${error.message}`);
+  process.exit(1);
+});

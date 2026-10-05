@@ -13,15 +13,20 @@ from typing import Optional
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from mcp.server.mcpserver import MCPServer
+from mcp.types import ToolAnnotations
 from spider import (
     query_reports,
     QueryError,
     normalize_stock_code,
     download_reports,
     format_reports,
-    saving_path,
     supported_report_types,
 )
+
+# 下载根目录由部署方通过环境变量指定，调用方（模型）无法用工具参数改写，
+# 因此所有写盘都落在这一个可审计的目录内。
+DOWNLOAD_DIR_ENV = "CNINFO_MCP_DOWNLOAD_DIR"
+DEFAULT_DOWNLOAD_DIR = os.path.join("~", "Downloads", "cninfo-mcp")
 
 
 def _package_version(default: str = "0.0.0") -> str:
@@ -52,7 +57,43 @@ def _supported_report_types_text() -> str:
     return ", ".join(supported_report_types().keys())
 
 
-@mcp.tool()
+def _download_root() -> str:
+    configured = os.environ.get(DOWNLOAD_DIR_ENV, "").strip()
+    return os.path.realpath(os.path.expanduser(configured or DEFAULT_DOWNLOAD_DIR))
+
+
+def _resolve_save_path(save_path: Optional[str]) -> str:
+    """把调用方给的 save_path 限制在下载根目录内，返回最终写入目录。
+
+    相对路径按根目录下的子目录解析；绝对路径只有落在根目录内才接受。两侧都
+    先 realpath，因此 `..` 和指向根目录之外的符号链接都会被拒绝。
+    """
+    root = _download_root()
+    requested = (save_path or "").strip()
+    if not requested:
+        return root
+    candidate = os.path.realpath(os.path.join(root, os.path.expanduser(requested)))
+    try:
+        inside = os.path.commonpath([root, candidate]) == root
+    except ValueError:
+        # Windows 上不同盘符之间没有公共路径
+        inside = False
+    if not inside:
+        raise ValueError(
+            f"save_path must be inside the download directory {root}. "
+            f"Set {DOWNLOAD_DIR_ENV} in the MCP server configuration to change it"
+        )
+    return candidate
+
+
+@mcp.tool(
+    annotations=ToolAnnotations(
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=True,
+    )
+)
 def query_annual_reports_tool(
     stock_code: str, year: Optional[int] = None, report_type: str = "annual"
 ) -> dict:
@@ -131,7 +172,16 @@ def query_annual_reports_tool(
         }
 
 
-@mcp.tool()
+# 非只读：会在下载根目录内写文件。文件名带附件 URL 的 SHA-256，重复调用只会
+# 原子替换同一附件的旧副本，不会改动其他文件，因此不是破坏性操作且幂等。
+@mcp.tool(
+    annotations=ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=True,
+    )
+)
 def download_annual_reports_tool(
     stock_code: str,
     year: Optional[int] = None,
@@ -144,7 +194,7 @@ def download_annual_reports_tool(
     Args:
         stock_code: Stock code (e.g., '000888' for 峨眉山, '688777' for 中科德芯)
         year: Optional year to filter (e.g., 2024). If not provided, downloads all available years
-        save_path: Optional directory to save files (e.g., '/Users/me/reports'). Defaults to pdf/ in package directory
+        save_path: Optional sub-directory for the files (e.g., 'annual/2024'). It must resolve inside the server's download directory, which is set by the CNINFO_MCP_DOWNLOAD_DIR environment variable (default ~/Downloads/cninfo-mcp); relative paths are taken relative to that directory and anything outside it is rejected. Omit to save directly in the download directory.
         report_type: Optional report type. Supported values: annual, semiannual, q1, q3, prospectus. Defaults to annual for backward compatibility.
 
     Returns:
@@ -161,8 +211,9 @@ def download_annual_reports_tool(
         - path: Directory where files were saved
         - message: Status message
     """
+    output_dir = _download_root()
     try:
-        output_dir = save_path or saving_path
+        output_dir = _resolve_save_path(save_path)
         stock_code = normalize_stock_code(stock_code)
 
         result = download_reports(
@@ -186,7 +237,7 @@ def download_annual_reports_tool(
             "failed": 0,
             "failures": [],
             "query_status": "error",
-            "path": save_path or saving_path,
+            "path": output_dir,
             "error": str(e),
             "message": f"Error downloading reports: {str(e)}. Supported report_type values: {_supported_report_types_text()}",
         }

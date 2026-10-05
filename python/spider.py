@@ -28,9 +28,9 @@ PAGE_SIZE = 30
 # 翻页安全上限，防止异常情况下无限循环
 MAX_PAGES = 100
 # 巨潮搜索联想接口：把股票代码/简称解析为 orgId（北交所查询必需）
-TOP_SEARCH_URL = "http://www.cninfo.com.cn/new/information/topSearch/query"
+TOP_SEARCH_URL = "https://www.cninfo.com.cn/new/information/topSearch/query"
 # 公告查询接口
-QUERY_URL = "http://www.cninfo.com.cn/new/hisAnnouncement/query"
+QUERY_URL = "https://www.cninfo.com.cn/new/hisAnnouncement/query"
 # 瞬时失败（网络抖动/限流）的重试次数与退避基数（秒）
 MAX_RETRIES = 3
 RETRY_BACKOFF = 1.0
@@ -147,8 +147,8 @@ BASE_HEADERS = {
     "Accept-Encoding": "gzip, deflate",
     "Accept-Language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7,zh-HK;q=0.6,zh-TW;q=0.5",
     "Host": "www.cninfo.com.cn",
-    "Origin": "http://www.cninfo.com.cn",
-    "Referer": "http://www.cninfo.com.cn/new/commonUrl?url=disclosure/list/notice",
+    "Origin": "https://www.cninfo.com.cn",
+    "Referer": "https://www.cninfo.com.cn/new/commonUrl?url=disclosure/list/notice",
     "X-Requested-With": "XMLHttpRequest",
 }
 

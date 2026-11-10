@@ -239,6 +239,20 @@ def format_reports(reports: list) -> list:
     return formatted
 
 
+def _get_proxies() -> Optional[dict]:
+    """获取代理设置，优先从 CNINFO_MCP_PROXY 环境变量读取，若无则遵循标准 requests 行为。"""
+    proxy = os.environ.get("CNINFO_MCP_PROXY", "").strip()
+    if proxy:
+        if not (
+            proxy.startswith("http://")
+            or proxy.startswith("https://")
+            or proxy.startswith("socks5://")
+        ):
+            proxy = f"http://{proxy}"
+        return {"http": proxy, "https": proxy}
+    return None
+
+
 def _build_headers() -> dict:
     """构造请求头，避免在并发场景下修改全局字典。"""
     headers = BASE_HEADERS.copy()
@@ -258,7 +272,13 @@ def _post_json(url: str, data: dict) -> dict:
     last_exc = None
     for attempt in range(MAX_RETRIES):
         try:
-            resp = requests.post(url, headers=_build_headers(), data=data, timeout=30)
+            resp = requests.post(
+                url,
+                headers=_build_headers(),
+                data=data,
+                timeout=30,
+                proxies=_get_proxies(),
+            )
             resp.raise_for_status()
             return resp.json()
         except requests.exceptions.HTTPError as e:
@@ -297,6 +317,31 @@ def _is_bse_code(stock_code) -> bool:
     """
     digits = re.sub(r"\D", "", str(stock_code or ""))
     return digits[:1] in ("4", "8") or digits[:2] == "92"
+
+
+def _resolve_target_exchanges(stock_code: str) -> list:
+    """根据股票代码前缀判断所属交易所，避免无差别跨市场轮询。
+
+    A 股号段划分规则：
+    - 沪市（SSE）：60xxxx/601xxx/603xxx/605xxx（主板）、688xxx/689xxx（科创板）、900xxx（B股）
+    - 深市（SZSE）：00xxxx/001xxx/002xxx/003xxx（主板/中小板）、30xxxx（创业板）、200xxx（B股）
+    - 北交所（BSE）：4xxxxx/8xxxxx（精选层平移）、920xxx（北交所新代码段）
+    未匹配到确定号段的代码回退到沪深全市场遍历。
+    """
+    digits = re.sub(r"\D", "", str(stock_code or ""))
+    if not digits:
+        return [("sse", "sh", "沪市"), ("szse", "sz", "深市")]
+
+    if _is_bse_code(digits):
+        return [("bj", "bj", "北交所")]
+
+    if digits.startswith(("60", "68", "90")):
+        return [("sse", "sh", "沪市")]
+
+    if digits.startswith(("00", "30", "20")):
+        return [("szse", "sz", "深市")]
+
+    return [("sse", "sh", "沪市"), ("szse", "sz", "深市")]
 
 
 def _resolve_org_id(stock_code) -> Optional[tuple]:
@@ -521,6 +566,7 @@ def _get_attachment(url):
             headers={"User-Agent": random.choice(User_Agent)},
             timeout=30,
             allow_redirects=False,
+            proxies=_get_proxies(),
         )
         if response.status_code not in (301, 302, 303, 307, 308):
             return response
@@ -648,58 +694,55 @@ def query_reports(stock_code, report_type="annual", year=None):
     errors = []
     partial = False
 
-    exchanges = [
-        ("sse", "sh", "沪市"),
-        ("szse", "sz", "深市"),
-    ]
-    for column, plate, label in exchanges:
-        try:
-            fetch_fn = lambda page, _stock, c=column, p=plate: _query_exchange_report(
-                page, stock_code, normalized_type, c, p
-            )
-            all_announcements.extend(_paginate(fetch_fn, stock_code))
-            partial = True
-        except Exception as e:
-            errors.append(f"{label}: {e}")
-            if isinstance(e, QueryError):
-                all_announcements.extend(e.reports)
-                partial = partial or e.status == "partial"
-            logger.warning(
-                "%s%s查询失败: %s",
-                label,
-                REPORT_TYPE_SPECS[normalized_type]["label"],
-                e,
-            )
-
-    if _is_bse_code(stock_code):
-        try:
-            resolved = _resolve_org_id(stock_code)
-            if resolved:
-                code, org_id = resolved
-                allowed_sec_codes.add(code)
-                stock_value = f"{code},{org_id}"
-                fetch_fn = lambda page, _stock: _query_exchange_report(
-                    page,
-                    code,
-                    normalized_type,
-                    "bj",
-                    "bj",
-                    stock_value=stock_value,
+    target_exchanges = _resolve_target_exchanges(stock_code)
+    for column, plate, label in target_exchanges:
+        if column == "bj":
+            try:
+                resolved = _resolve_org_id(stock_code)
+                if resolved:
+                    code, org_id = resolved
+                    allowed_sec_codes.add(code)
+                    stock_value = f"{code},{org_id}"
+                    fetch_fn = lambda page, _stock: _query_exchange_report(
+                        page,
+                        code,
+                        normalized_type,
+                        "bj",
+                        "bj",
+                        stock_value=stock_value,
+                    )
+                    all_announcements.extend(_paginate(fetch_fn, stock_value))
+                    partial = True
+                else:
+                    raise ValueError(f"Could not resolve orgId for {stock_code}")
+            except Exception as e:
+                errors.append(f"北交所: {e}")
+                if isinstance(e, QueryError):
+                    all_announcements.extend(e.reports)
+                    partial = partial or e.status == "partial"
+                logger.warning(
+                    "北交所%s查询失败: %s",
+                    REPORT_TYPE_SPECS[normalized_type]["label"],
+                    e,
                 )
-                all_announcements.extend(_paginate(fetch_fn, stock_value))
+        else:
+            try:
+                fetch_fn = lambda page, _stock, c=column, p=plate: _query_exchange_report(
+                    page, stock_code, normalized_type, c, p
+                )
+                all_announcements.extend(_paginate(fetch_fn, stock_code))
                 partial = True
-            else:
-                raise ValueError(f"Could not resolve orgId for {stock_code}")
-        except Exception as e:
-            errors.append(f"北交所: {e}")
-            if isinstance(e, QueryError):
-                all_announcements.extend(e.reports)
-                partial = partial or e.status == "partial"
-            logger.warning(
-                "北交所%s查询失败: %s",
-                REPORT_TYPE_SPECS[normalized_type]["label"],
-                e,
-            )
+            except Exception as e:
+                errors.append(f"{label}: {e}")
+                if isinstance(e, QueryError):
+                    all_announcements.extend(e.reports)
+                    partial = partial or e.status == "partial"
+                logger.warning(
+                    "%s%s查询失败: %s",
+                    label,
+                    REPORT_TYPE_SPECS[normalized_type]["label"],
+                    e,
+                )
 
     filtered = []
     seen = set()

@@ -17,7 +17,8 @@ const REQUIREMENTS_FILE = path.join(
   "requirements.txt",
 );
 
-let VENV_DIR = path.join(os.homedir(), ".cninfo-mcp", "venv");
+const DEFAULT_VENV_DIR = path.join(os.homedir(), ".cninfo-mcp", "venv");
+let VENV_DIR = DEFAULT_VENV_DIR;
 
 // 依赖探针：校验 venv 是否满足 requirements.txt 的全部约束
 const DEPS_CHECK = path.join(__dirname, "..", "python", "check_deps.py");
@@ -41,9 +42,10 @@ async function isSupportedPython(cmd) {
 
 // Preserve an obsolete environment and create a compatible sibling if needed.
 async function reusableVenv() {
+  VENV_DIR = DEFAULT_VENV_DIR;
   if (!fs.existsSync(getVenvPython())) return null;
   if (await isSupportedPython(getVenvPython())) return getVenvPython();
-  VENV_DIR += "-py310";
+  VENV_DIR = `${DEFAULT_VENV_DIR}-py310`;
   if (!fs.existsSync(getVenvPython())) return null;
   if (await isSupportedPython(getVenvPython())) return getVenvPython();
   throw new Error(`Unsupported or broken Python environment at ${VENV_DIR}. Recreate it with Python 3.10+.`);

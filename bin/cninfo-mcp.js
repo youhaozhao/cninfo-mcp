@@ -22,7 +22,8 @@ const INSTALL_SCRIPT = path.join(
 const INSTALL_COMMAND = "npx -y @youhaozhao/cninfo-mcp install";
 
 // 虚拟环境目录，放在用户目录下保证跨 npx 调用持久化
-let VENV_DIR = path.join(os.homedir(), ".cninfo-mcp", "venv");
+const DEFAULT_VENV_DIR = path.join(os.homedir(), ".cninfo-mcp", "venv");
+let VENV_DIR = DEFAULT_VENV_DIR;
 
 // 获取虚拟环境中的 Python 可执行文件路径
 function getVenvPython() {
@@ -44,9 +45,10 @@ async function isSupportedPython(cmd) {
 
 // An obsolete environment is left intact; its compatible sibling is used instead.
 async function reusableVenv() {
+  VENV_DIR = DEFAULT_VENV_DIR;
   if (!fs.existsSync(getVenvPython())) return null;
   if (await isSupportedPython(getVenvPython())) return getVenvPython();
-  VENV_DIR += "-py310";
+  VENV_DIR = `${DEFAULT_VENV_DIR}-py310`;
   if (!fs.existsSync(getVenvPython())) return null;
   if (await isSupportedPython(getVenvPython())) return getVenvPython();
   throw new Error(`Unsupported or broken Python environment at ${VENV_DIR}. Recreate it with Python 3.10+.`);

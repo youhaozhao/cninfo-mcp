@@ -80,7 +80,7 @@ test(`${LAUNCHER}: starts the server from an installed environment`, async () =>
 
 test(`${LAUNCHER}: never creates an environment at startup`, async () => {
   const app = load(LAUNCHER, { versions: { python3: 'Python 3.12.0' } });
-  app.fakeFs.existsSync = filename => !filename.includes('/venv/');
+  app.fakeFs.existsSync = filename => !/[\\/]venv[\\/]/.test(filename);
   await assert.rejects(app.run('main()'), /exit 1/);
   assert.deepEqual(app.calls, []);
   assert.match(app.errors.join('\n'), /npx -y @youhaozhao\/cninfo-mcp install/);
@@ -113,7 +113,7 @@ test(`${INSTALLER}: skips unsupported Python, accepts version on stderr`, async 
 
 test(`${INSTALLER}: creates venv and installs using unsplit paths`, async () => {
   const app = load(INSTALLER, { versions: { python3: 'Python 3.12.0' }, missingDeps: true });
-  app.fakeFs.existsSync = filename => !filename.includes('/venv/');
+  app.fakeFs.existsSync = filename => !/[\\/]venv[\\/]/.test(filename);
   await app.run('main()');
   const create = app.calls.find(call => call.args[1] === 'venv');
   const install = app.calls.find(call => call.args[1] === 'pip');
@@ -126,7 +126,7 @@ test(`${INSTALLER}: creates venv and installs using unsplit paths`, async () => 
 
 test(`${INSTALLER}: fails when no supported Python is available`, async () => {
   const app = load(INSTALLER, { versions: { python3: 'Python 3.9.6' } });
-  app.fakeFs.existsSync = filename => !filename.includes('/venv/');
+  app.fakeFs.existsSync = filename => !/[\\/]venv[\\/]/.test(filename);
   await assert.rejects(app.run('main()'), /Python 3\.10\+ not found/);
   assert(!app.calls.some(call => call.args.includes('venv')));
 });

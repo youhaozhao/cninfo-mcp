@@ -209,7 +209,11 @@ def test_normalized_code_scopes_query_and_filter(monkeypatch):
 
     monkeypatch.setattr(spider, "_query_exchange_report", fetch)
     assert spider.query_reports(" 000001 ") == [report()]
-    assert seen == ["000001", "000001"]
+    assert seen == ["000001"]
+
+    seen.clear()
+    assert spider.query_reports("123456") == []
+    assert seen == ["123456", "123456"]
 
 
 def test_query_outage_is_not_empty_success(monkeypatch):
@@ -220,15 +224,18 @@ def test_query_outage_is_not_empty_success(monkeypatch):
         spider.query_reports("000001")
     assert caught.value.status == "error"
     assert caught.value.reports == []
-    assert len(caught.value.errors) == 2
+    assert len(caught.value.errors) == 1
+    assert "深市" in caught.value.errors[0]
+
+    with pytest.raises(spider.QueryError) as caught_unknown:
+        spider.query_reports("123456")
+    assert len(caught_unknown.value.errors) == 2
 
 
 def test_query_preserves_page_one(monkeypatch):
     rows = [report(f"{i}.pdf") for i in range(spider.PAGE_SIZE)]
 
     def fetch(page, code, kind, column, plate):
-        if column == "szse":
-            return []
         if page == 2:
             raise requests.Timeout("page two")
         return rows
@@ -239,6 +246,34 @@ def test_query_preserves_page_one(monkeypatch):
     assert caught.value.status == "partial"
     assert caught.value.reports == rows
     assert "page 2" in str(caught.value)
+
+
+def test_resolve_target_exchanges_and_routing():
+    assert spider._resolve_target_exchanges("600519") == [("sse", "sh", "沪市")]
+    assert spider._resolve_target_exchanges("688777") == [("sse", "sh", "沪市")]
+    assert spider._resolve_target_exchanges("900901") == [("sse", "sh", "沪市")]
+    assert spider._resolve_target_exchanges("000001") == [("szse", "sz", "深市")]
+    assert spider._resolve_target_exchanges("300750") == [("szse", "sz", "深市")]
+    assert spider._resolve_target_exchanges("200002") == [("szse", "sz", "深市")]
+    assert spider._resolve_target_exchanges("835185") == [("bj", "bj", "北交所")]
+    assert spider._resolve_target_exchanges("920019") == [("bj", "bj", "北交所")]
+    assert spider._resolve_target_exchanges("123456") == [
+        ("sse", "sh", "沪市"),
+        ("szse", "sz", "深市"),
+    ]
+
+
+def test_proxy_environment_variable(monkeypatch):
+    monkeypatch.setenv("CNINFO_MCP_PROXY", "http://127.0.0.1:7890")
+    proxies = spider._get_proxies()
+    assert proxies == {"http": "http://127.0.0.1:7890", "https": "http://127.0.0.1:7890"}
+
+    monkeypatch.setenv("CNINFO_MCP_PROXY", "127.0.0.1:7890")
+    proxies2 = spider._get_proxies()
+    assert proxies2 == {"http": "http://127.0.0.1:7890", "https": "http://127.0.0.1:7890"}
+
+    monkeypatch.delenv("CNINFO_MCP_PROXY", raising=False)
+    assert spider._get_proxies() is None
 
 
 def test_pagination_limit_is_partial(monkeypatch):

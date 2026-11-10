@@ -69,6 +69,7 @@ claude mcp add cninfo -- npx -y @youhaozhao/cninfo-mcp
 | 环境变量 | 说明 | 默认值 |
 | --- | --- | --- |
 | `CNINFO_MCP_DOWNLOAD_DIR` | 下载根目录，所有 PDF 只会写到这个目录里 | `~/Downloads/cninfo-mcp` |
+| `CNINFO_MCP_PROXY` | 可选代理地址（如 `http://127.0.0.1:7890`），用于查询与下载 | 无（遵从系统代理） |
 
 ## 使用提示
 

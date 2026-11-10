@@ -40,7 +40,7 @@
   "scripts": {
     "start": "node bin/cninfo-mcp.js",
     "dev": "node bin/cninfo-mcp.js",
-    "test": "python3 -m pytest python -q && node --test scripts/test-launcher.js scripts/test-manifest.js"
+    "test": "node scripts/run-tests.js"
   },
   "dependencies": {
     "spawn-please": "^2.0.2"

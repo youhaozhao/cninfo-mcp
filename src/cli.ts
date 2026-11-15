@@ -2,6 +2,7 @@
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CACHE_DIR_ENV, DOWNLOAD_DIR_ENV, loadConfig } from "./config.ts";
 import { runProbe } from "./probe.ts";
+import { runSelfTest } from "./selftest.ts";
 import { createServer, createServices, packageVersion } from "./server.ts";
 
 const HELP = `cninfo-mcp ${packageVersion()} — MCP server for CNINFO (巨潮资讯网) disclosures
@@ -9,6 +10,7 @@ const HELP = `cninfo-mcp ${packageVersion()} — MCP server for CNINFO (巨潮�
 Usage:
   cninfo-mcp            Start the MCP server on stdio (what MCP clients run)
   cninfo-mcp probe      Check connectivity to CNINFO and exit (non-zero on failure)
+  cninfo-mcp selftest   Check the installation offline (PDF text extraction) and exit
   cninfo-mcp --version  Print the version
   cninfo-mcp --help     Show this help
 
@@ -36,6 +38,11 @@ async function main(): Promise<number> {
     process.stdout.write(
       "Nothing to install: cninfo-mcp 3.x has no Python dependency. The old ~/.cninfo-mcp/venv directory can be deleted.\n",
     );
+    return 0;
+  }
+
+  if (command === "selftest") {
+    process.stdout.write(`${await runSelfTest()}\n`);
     return 0;
   }
 

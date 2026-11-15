@@ -14,7 +14,7 @@
 
 ## 快速开始
 
-只需要 Node.js 22.13 或更高版本，没有其他运行时依赖。在 MCP 客户端的配置里加入：
+只需要 Node.js 22.13 或更高版本。发布包是自包含的（约 7 MB），没有任何需要另外安装的依赖。在 MCP 客户端的配置里加入：
 
 ```json
 {
@@ -35,6 +35,8 @@
 ```bash
 npx -y @youhaozhao/cninfo-mcp probe
 ```
+
+`selftest` 子命令则不联网，只检查安装本身（PDF 文本提取）是否可用。
 
 ## 可以这样问
 
@@ -162,10 +164,10 @@ npm test            # 离线单元测试（假 fetch，不联网）
 npm run typecheck
 npm run test:live   # 真实访问巨潮的端到端冒烟测试
 npm run dev         # 直接从 TypeScript 源码启动服务器
-npm run build       # 编译到 dist/
+npm run build       # 打包到 dist/（esbuild，自包含）
 ```
 
-源码在 `src/`：`http.ts`（白名单、限速、重试）、`securities.ts`（证券目录）、`announcements.ts`（公告查询）、`reports.ts`（报告标题分类）、`companyData.ts`（结构化数据）、`documents.ts`（文档抓取、PDF 文本、下载）、`server.ts`（MCP 工具）、`cli.ts`（入口）。开发时用 Node 自带的类型擦除直接运行 `.ts`（需要 Node 22.18+），发布包里是 `tsc` 编译后的 JavaScript。
+源码在 `src/`：`http.ts`（白名单、限速、重试）、`securities.ts`（证券目录）、`announcements.ts`（公告查询）、`reports.ts`（报告标题分类）、`companyData.ts`（结构化数据）、`documents.ts`（文档抓取、PDF 文本、下载）、`server.ts`（MCP 工具）、`cli.ts`（入口）。开发时用 Node 自带的类型擦除直接运行 `.ts`（需要 Node 22.18+）。发布包由 `scripts/build.mjs` 用 esbuild 把源码和全部依赖打成自包含的 `dist/`，pdf.js 单独成块、首次读取 PDF 时才加载；被打包的第三方软件及其许可证列在 `dist/THIRD-PARTY-LICENSES.txt`。
 
 仓库的定时工作流每天运行一次 `cninfo-mcp probe`，接口异常时自动开 issue。
 

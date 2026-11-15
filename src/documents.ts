@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -447,14 +448,44 @@ interface PdfJs {
 
 let pdfjsPromise: Promise<{ pdfjs: PdfJs; assets: string }> | undefined;
 
+/**
+ * pdf.js 的字体映射等资源所在目录。发布包里它们被构建脚本复制到入口文件旁的 pdfjs/；
+ * 从源码运行时直接取 node_modules 里的 pdfjs-dist。
+ */
+export function pdfjsAssetDir(): string {
+  // 这段代码可能被打进入口文件，也可能落在 chunks/ 子目录里，两处都找一下
+  for (const base of [import.meta.dirname, path.dirname(import.meta.dirname)]) {
+    const bundled = path.join(base, "pdfjs");
+    if (existsSync(path.join(bundled, "cmaps"))) return bundled;
+  }
+  const entry = createRequire(import.meta.url).resolve("pdfjs-dist/legacy/build/pdf.mjs");
+  return path.resolve(path.dirname(entry), "..", "..");
+}
+
 /** 按需加载 pdf.js：它体积较大，只在第一次读取 PDF 时才付出加载成本。 */
 function loadPdfjs(): Promise<{ pdfjs: PdfJs; assets: string }> {
   pdfjsPromise ??= (async () => {
-    const require = createRequire(import.meta.url);
-    const entry = require.resolve("pdfjs-dist/legacy/build/pdf.mjs");
-    const assets = path.resolve(path.dirname(entry), "..", "..");
-    const pdfjs = (await import("pdfjs-dist/legacy/build/pdf.mjs")) as unknown as PdfJs;
-    return { pdfjs, assets };
+    // pdf.js 在加载时会尝试引入渲染用的可选原生模块 @napi-rs/canvas，找不到就打三行
+    // "rendering may be broken" 警告。我们只提取文字、不渲染，这些警告与本项目无关，
+    // 加载期间暂时静音，免得误导使用者。
+    const { log, warn } = console;
+    console.log = () => {};
+    console.warn = () => {};
+    let pdfjs: unknown;
+    let worker: unknown;
+    try {
+      [pdfjs, worker] = await Promise.all([
+        import("pdfjs-dist/legacy/build/pdf.mjs"),
+        import("pdfjs-dist/legacy/build/pdf.worker.mjs"),
+      ]);
+    } finally {
+      console.log = log;
+      console.warn = warn;
+    }
+    // pdf.js 在 Node 里默认按相对路径动态加载 worker 文件，打包后那个路径不存在。
+    // 预先把 worker 模块挂到它约定的全局位置，它就直接在主线程使用这一份。
+    (globalThis as { pdfjsWorker?: unknown }).pdfjsWorker ??= worker;
+    return { pdfjs: pdfjs as PdfJs, assets: pdfjsAssetDir() };
   })();
   pdfjsPromise.catch(() => {
     pdfjsPromise = undefined;
@@ -462,7 +493,8 @@ function loadPdfjs(): Promise<{ pdfjs: PdfJs; assets: string }> {
   return pdfjsPromise;
 }
 
-async function extractPdf(url: string, bytes: Uint8Array): Promise<DocumentText> {
+/** 从 PDF 字节提取逐页文本和目录。 */
+export async function extractPdf(url: string, bytes: Uint8Array): Promise<DocumentText> {
   const { pdfjs, assets } = await loadPdfjs();
   // pdf.js 会接管传入的缓冲区，给它一份副本以免影响调用方持有的数据
   const task = pdfjs.getDocument({
@@ -471,7 +503,6 @@ async function extractPdf(url: string, bytes: Uint8Array): Promise<DocumentText>
     cMapUrl: path.join(assets, "cmaps") + path.sep,
     cMapPacked: true,
     standardFontDataUrl: path.join(assets, "standard_fonts") + path.sep,
-    wasmUrl: path.join(assets, "wasm") + path.sep,
     useSystemFonts: false,
     disableFontFace: true,
     isEvalSupported: false,

@@ -50,3 +50,7 @@ jobs:
           npm init -y > /dev/null
           npm install ../youhaozhao-cninfo-mcp-*.tgz
           test "$(npx cninfo-mcp --version)" = "$(node -p "require('../package.json').version")"
+          # 发布包是自包含的：不应带进任何依赖
+          test "$(ls node_modules | grep -v '^\.' | tr -d '\n')" = "@youhaozhao"
+          # 离线自检：确认打包后的 pdf.js 和字体映射在该平台上可用
+          npx cninfo-mcp selftest

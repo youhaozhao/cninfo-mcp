@@ -43,7 +43,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "node scripts/build.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --test \"test/*.test.ts\"",
     "test:live": "CNINFO_LIVE=1 node --test test/live/live.ts",
@@ -52,14 +52,13 @@
     "prepack": "npm run build",
     "probe": "node src/cli.ts probe"
   },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.32.2",
-    "pdfjs-dist": "^6.5.438",
-    "zod": "^4.6.7"
-  },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@types/node": "^22.19.0",
-    "typescript": "^7.0.2"
+    "esbuild": "^0.28.2",
+    "pdfjs-dist": "^6.5.438",
+    "typescript": "^7.0.2",
+    "zod": "^4.6.7"
   },
   "engines": {
     "node": ">=22.13.0"

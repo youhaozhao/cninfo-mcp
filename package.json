@@ -1,29 +1,28 @@
 {
   "name": "@youhaozhao/cninfo-mcp",
-  "version": "1.4.1",
+  "version": "3.0.0",
   "mcpName": "io.github.youhaozhao/cninfo-mcp",
-  "description": "MCP Server for querying and downloading Chinese listed companies' periodic reports from CNINFO (巨潮资讯网)",
+  "description": "MCP server for China-market investment research on CNINFO (巨潮资讯网): announcements, periodic reports, in-report PDF reading, financials, shareholders, dividends and trading disclosures",
   "keywords": [
     "mcp",
     "mcp-server",
     "cninfo",
     "chinese-stock",
+    "a-share",
     "annual-reports",
-    "quarterly-reports",
-    "semiannual-reports",
-    "periodic-reports",
+    "announcements",
+    "financial-statements",
+    "investment-research",
     "finance",
-    "python",
     "巨潮",
     "巨潮资讯",
     "定期报告",
     "年报",
-    "半年报",
-    "季报",
-    "招股书",
+    "公告",
+    "财报",
     "A股",
     "上市公司",
-    "财报"
+    "投研"
   ],
   "homepage": "https://github.com/youhaozhao/cninfo-mcp#readme",
   "repository": {
@@ -34,36 +33,35 @@
     "url": "https://github.com/youhaozhao/cninfo-mcp/issues"
   },
   "license": "MIT",
+  "type": "module",
   "bin": {
-    "cninfo-mcp": "bin/cninfo-mcp.js"
+    "cninfo-mcp": "dist/cli.js"
   },
-  "scripts": {
-    "start": "node bin/cninfo-mcp.js",
-    "dev": "node bin/cninfo-mcp.js",
-    "test": "python3 -m pytest python -q && node --test scripts/test-launcher.js scripts/test-manifest.js"
-  },
-  "dependencies": {
-    "spawn-please": "^2.0.2"
-  },
-  "devDependencies": {
-    "@types/node": "^20.11.0"
-  },
-  "engines": {
-    "node": ">=18.0.0"
-  },
-  "os": [
-    "darwin",
-    "linux",
-    "win32"
-  ],
   "files": [
-    "bin/",
-    "python/mcp_server.py",
-    "python/check_deps.py",
-    "python/spider.py",
-    "python/requirements.txt",
-    "scripts/install-python-deps.js",
+    "dist/",
     "README.md",
     "LICENSE"
-  ]
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test \"test/*.test.ts\"",
+    "test:live": "CNINFO_LIVE=1 node --test test/live/live.ts",
+    "start": "node dist/cli.js",
+    "dev": "node src/cli.ts",
+    "prepack": "npm run build",
+    "probe": "node src/cli.ts probe"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "pdfjs-dist": "^6.5.438",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "typescript": "^7.0.2"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  }
 }

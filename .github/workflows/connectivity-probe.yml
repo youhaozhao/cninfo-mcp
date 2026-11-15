@@ -1,6 +1,6 @@
 name: 巨潮连通性探测
 
-# 每 24 小时实际探测一次沪/深/北交所年报接口。
+# 每 24 小时实际探测一次：沪/深/北交所年报查询、财务数据接口、文档下载与解析。
 # 仅在探测到异常时通过 GitHub Issue 通知 repo owner（去重，不刷屏）。
 on:
   schedule:
@@ -17,16 +17,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-node@v4
         with:
-          python-version: "3.11"
+          node-version: "24"
+          cache: npm
 
       - name: 安装依赖
-        run: pip install "requests>=2.31.0"
+        run: npm ci
 
       - name: 运行连通性探测
         shell: bash
-        run: python scripts/connectivity_probe.py | tee probe_output.txt
+        run: node src/cli.ts probe | tee probe_output.txt
 
       - name: 异常时通知 repo owner（去重）
         if: failure()
@@ -61,8 +62,8 @@ jobs:
               await github.rest.issues.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                title: `⚠️ 巨潮年报接口连通性探测失败（${ts.slice(0, 10)}）`,
+                title: `⚠️ 巨潮接口连通性探测失败（${ts.slice(0, 10)}）`,
                 labels: [label],
-                body: `定时探测检测到沪/深/北交所年报接口异常。\n\n${block}\n\n运行详情：${runUrl}\n\n> 本 issue 由「巨潮连通性探测」工作流自动创建。问题修复后请手动关闭；只要本 issue 处于开启状态，后续失败将以评论形式追加，不会重复开新 issue。`,
+                body: `定时探测检测到巨潮接口异常。\n\n${block}\n\n运行详情：${runUrl}\n\n> 本 issue 由「巨潮连通性探测」工作流自动创建。问题修复后请手动关闭；只要本 issue 处于开启状态，后续失败将以评论形式追加，不会重复开新 issue。`,
               });
             }

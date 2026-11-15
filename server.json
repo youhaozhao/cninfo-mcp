@@ -1,26 +1,32 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.youhaozhao/cninfo-mcp",
-  "title": "CNINFO Reports (unofficial)",
-  "description": "Unofficial community server to query and download China A-share periodic reports from CNINFO.",
+  "title": "CNINFO 巨潮资讯 (unofficial)",
+  "description": "Unofficial server for China A-share research on CNINFO: filings, report text, financials, holders.",
   "repository": {
     "url": "https://github.com/youhaozhao/cninfo-mcp",
     "source": "github"
   },
-  "version": "2.0.0",
+  "version": "3.0.0",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@youhaozhao/cninfo-mcp",
-      "version": "2.0.0",
+      "version": "3.0.0",
       "transport": {
         "type": "stdio"
       },
       "environmentVariables": [
         {
           "name": "CNINFO_MCP_DOWNLOAD_DIR",
-          "description": "Directory that downloaded PDFs are confined to. Defaults to ~/Downloads/cninfo-mcp.",
+          "description": "Directory that downloaded files are confined to. Defaults to ~/Downloads/cninfo-mcp.",
+          "format": "filepath",
+          "isRequired": false
+        },
+        {
+          "name": "CNINFO_MCP_CACHE_DIR",
+          "description": "Cache directory for security lists and fetched documents. Defaults to the platform cache directory.",
           "format": "filepath",
           "isRequired": false
         }

@@ -325,7 +325,10 @@ export class DocumentService {
     // 有页解析失败时不缓存：失败可能是暂时的，不能把残缺文本永久当作结果
     if (!document.failedPages?.length) {
       const payload: CachedText = { v: TEXT_CACHE_VERSION, ...document };
-      await writeFileAtomic(textFile, JSON.stringify(payload)).catch(() => {});
+      // 文本缓存同样计入上限：写完后也要检查一次，否则只读不下载时缓存会一直超限
+      await writeFileAtomic(textFile, JSON.stringify(payload))
+        .then(() => this.prune())
+        .catch(() => {});
     }
     return document;
   }

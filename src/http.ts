@@ -207,10 +207,16 @@ export class HttpClient {
       this.active += 1;
     }
     // 持有名额后再排发起时刻：既满足最小间隔，也尊重限流冷却
-    const now = this.options.now();
-    const startAt = Math.max(now, this.nextSlotAt, this.pauseUntil);
-    this.nextSlotAt = startAt + this.options.minIntervalMs;
-    if (startAt > now) await this.options.sleep(startAt - now);
+    for (;;) {
+      const now = this.options.now();
+      const startAt = Math.max(now, this.nextSlotAt, this.pauseUntil);
+      this.nextSlotAt = startAt + this.options.minIntervalMs;
+      if (startAt <= now) return;
+      const pauseSeen = this.pauseUntil;
+      await this.options.sleep(startAt - now);
+      // 等待期间别的请求可能刚被限流并延长了冷却：已排好的发起时刻作废，重新排
+      if (this.pauseUntil <= pauseSeen || this.pauseUntil <= startAt) return;
+    }
   }
 
   private release(): void {

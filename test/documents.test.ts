@@ -168,6 +168,20 @@ test("one failed download does not affect the others", async () => {
   assert.equal((await fs.readdir(downloads)).length, 1);
 });
 
+test("extracted text counts towards the cache limit", async () => {
+  const body = "<p>" + "年报正文".repeat(1500) + "</p>"; // 6 KB of text, 18 KB as UTF-8
+  const { documents, root } = await setup(
+    { "finalpage/a/old.html": () => new Response(body) },
+    24_000, // the source alone fits; source plus extracted text does not
+  );
+  const text = await documents.text("finalpage/a/old.html");
+  assert.equal(text.pages.join("").length, 6000);
+  const docsDir = path.join(root, "cache", "docs");
+  let total = 0;
+  for (const name of await fs.readdir(docsDir)) total += (await fs.stat(path.join(docsDir, name))).size;
+  assert.ok(total <= 24_000, `cache holds ${total} bytes`);
+});
+
 test("URL-only downloads with the same file name do not collide", async () => {
   const { documents, downloads } = await setup({
     "finalpage/2024-01-01/1.PDF": () => pdfResponse(makePdf(["first"])),

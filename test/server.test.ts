@@ -182,6 +182,25 @@ test("read_document respects max_chars and says where to continue", async () => 
   await close();
 });
 
+test("read_document applies max_chars to search results too", async () => {
+  const pageTexts = Array.from({ length: 14 }, (_, i) => `margin ${"filler ".repeat(9)}margin p${i + 1}`);
+  const { call, close } = await connect({
+    [REPORT_URL]: () => new Response(makePdf(pageTexts)),
+  });
+  const full = await call("read_document", { url: REPORT_URL, query: "margin", max_chars: 20000 });
+  assert.match(full.text, /found on 14 page\(s\)/);
+  assert.equal([...full.text.matchAll(/\[p\.\d+\]/g)].length, 14);
+  assert.doesNotMatch(full.text, /max_chars reached/);
+
+  const capped = await call("read_document", { url: REPORT_URL, query: "margin", max_chars: 1000 });
+  const shown = [...capped.text.matchAll(/\[p\.(\d+)\]/g)].length;
+  assert.ok(shown >= 1 && shown < 14, String(shown));
+  assert.ok(capped.text.length < 1500, String(capped.text.length));
+  // pages whose snippets did not fit are still named, so nothing is silently lost
+  assert.match(capped.text, new RegExp(`max_chars reached; also matched on pages ${shown + 1}-14`));
+  await close();
+});
+
 test("download_reports writes only inside the download directory", async () => {
   const { call, config, close } = await connect();
   const escape = await call("download_reports", { stock: "600519", save_path: "../outside" });

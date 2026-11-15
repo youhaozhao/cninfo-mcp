@@ -160,29 +160,55 @@ export class SecurityDirectory {
     this.now = now;
   }
 
-  /** 精确解析为唯一证券；无法唯一确定时抛出带候选的错误。 */
+  /**
+   * 精确解析为唯一证券；无法唯一确定时抛出带候选的错误。
+   *
+   * 各个目录和联想接口互为后备：某一个目录暂时取不到时继续尝试其余来源，
+   * 只有在所有来源都没有结果、且确实有目录加载失败时，才把那次失败报告出来
+   * （此时"查不到"并不可信）。
+   */
   async resolve(input: string): Promise<Security> {
     const query = parseSecurityQuery(input);
+    let directoryError: unknown;
+    const lookup = async (
+      list: ListName,
+      pick: (directory: Directory) => Security | undefined,
+    ): Promise<Security | undefined> => {
+      try {
+        return pick(await this.directory(list));
+      } catch (error) {
+        directoryError ??= error;
+        return undefined;
+      }
+    };
+
     if (query.code) {
+      const code = query.code;
       const list: ListName = query.marketHint === "HK" ? "hk" : "a";
-      const hit = (await this.directory(list)).byCode.get(query.code);
+      const hit = await lookup(list, (directory) => directory.byCode.get(code));
       if (hit) return hit;
-      // 目录没有的（基金、债券、已退市、刚上市）交给联想接口
-      const remote = await this.remoteSearch(query.code);
-      const exact = remote.find((s) => s.code === query.code);
+      // 目录没有的（基金、债券、已退市、刚上市）或目录不可用时，交给联想接口
+      const remote = await this.remoteSearch(code).catch((error: unknown) => {
+        throw directoryError ?? error;
+      });
+      const exact = remote.find((s) => s.code === code);
       if (exact) return exact;
+      if (directoryError) throw directoryError;
       throw new CninfoError("NOT_FOUND", `No security found for code "${input}"`);
     }
 
     const wanted = normalizeName(query.text);
     for (const list of ["a", "hk"] as const) {
-      const hit = (await this.directory(list)).byName.get(wanted);
+      const hit = await lookup(list, (directory) => directory.byName.get(wanted));
       if (hit) return hit;
     }
-    const remote = await this.remoteSearch(query.text);
+    const remote = await this.remoteSearch(query.text).catch((error: unknown) => {
+      throw directoryError ?? error;
+    });
     const exact = remote.filter((s) => normalizeName(s.name) === wanted);
     const pool = exact.length > 0 ? exact : remote;
     if (pool.length === 0) {
+      if (directoryError) throw directoryError;
       throw new CninfoError("NOT_FOUND", `No security found for "${input}"`);
     }
     // 同一家公司的 A/H 两地上市共用 orgId：优先取 A 股

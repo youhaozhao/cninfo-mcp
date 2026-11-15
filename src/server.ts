@@ -307,7 +307,7 @@ export function createServer(services: Services = createServices()): McpServer {
     {
       title: "Read an announcement or report",
       description:
-        "Read the text of a CNINFO document (PDF, or HTML for older filings) given its URL from list_reports or search_announcements. Three modes: (1) no pages/query: overview with page count, table of contents and the opening pages; (2) query: find which pages mention the given words (space-separated, any match) with snippets, the efficient way to locate a section in a long report; (3) pages: full text of those pages, e.g. \"12-18\". Output is plain text capped at max_chars; it ends with the pages value to continue from. Scanned documents without a text layer return empty pages.",
+        "Read the text of a CNINFO document (PDF, or HTML for older filings) given its URL from list_reports or search_announcements. Three modes: (1) no pages/query: overview with page count, table of contents and the opening pages; (2) query: find which pages mention the given words (space-separated, any match) with snippets, the efficient way to locate a section in a long report; (3) pages: full text of those pages, e.g. \"12-18\". Output is plain text capped at max_chars in every mode; it ends with the pages value to continue from, or the remaining matching pages. Scanned documents without a text layer return empty pages.",
       inputSchema: {
         url: z
           .string()
@@ -349,11 +349,24 @@ export function createServer(services: Services = createServices()): McpServer {
         const lines = [
           ...head,
           `"${query}" found on ${hits.length} page(s)${wanted ? ` within pages ${formatPageSpec(wanted)}` : ""}`,
-          ...hits.map(
-            (hit) =>
-              `\n[p.${hit.page}] ${hit.matches} match(es)\n${hit.snippets.map((s) => `  ${s}`).join("\n")}`,
-          ),
         ];
+        // 片段同样受 max_chars 约束；放不下的命中页只列页码，调用方仍然知道去哪里读
+        let used = 0;
+        const omitted: number[] = [];
+        for (const hit of hits) {
+          const block = `\n[p.${hit.page}] ${hit.matches} match(es)\n${hit.snippets.map((s) => `  ${s}`).join("\n")}`;
+          if (omitted.length > 0 || (used > 0 && used + block.length > max_chars)) {
+            omitted.push(hit.page);
+            continue;
+          }
+          lines.push(used + block.length > max_chars ? `${block.slice(0, max_chars)}…` : block);
+          used += block.length;
+        }
+        if (omitted.length > 0) {
+          lines.push(
+            `\n[max_chars reached; also matched on pages ${formatPageSpec(omitted)} (snippets omitted)]`,
+          );
+        }
         if (hits.length > 0) lines.push('\nRead a section with pages="<start>-<end>".');
         return textResult(lines.join("\n"));
       }

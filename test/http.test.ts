@@ -95,6 +95,42 @@ test("treats 403 as rate limiting: cools down globally, then retries", async () 
   assert.ok(now >= 2000, "the retry must wait out the 1s cooldown");
 });
 
+test("requests already queued behind the pacing interval honour a new cooldown", async () => {
+  // virtual clock: sleeping advances time and lets other tasks run
+  let now = 0;
+  const starts: number[] = [];
+  let first = true;
+  const { fetch } = fakeFetch({
+    [API]: () => {
+      starts.push(now);
+      if (first) {
+        first = false;
+        return new Response("", { status: 429 });
+      }
+      return json({ ok: true });
+    },
+  });
+  const timers: Array<{ at: number; wake: () => void }> = [];
+  const client = testClient(fetch, {
+    minIntervalMs: 120,
+    now: () => now,
+    sleep: (ms) => new Promise<void>((wake) => timers.push({ at: now + ms, wake })),
+  });
+  const all = Promise.all([0, 1, 2, 3].map((i) => client.getJson(`${API}?i=${i}`)));
+  for (let guard = 0; guard < 200; guard++) {
+    await new Promise((resolve) => setImmediate(resolve));
+    if (timers.length === 0) break;
+    timers.sort((a, b) => a.at - b.at);
+    const next = timers.shift()!;
+    now = Math.max(now, next.at);
+    next.wake();
+  }
+  await all;
+  // the first request is throttled at t=0; nothing else may start inside the 1s cooldown
+  assert.equal(starts[0], 0);
+  assert.ok(starts.slice(1).every((t) => t >= 1000), JSON.stringify(starts));
+});
+
 test("validate() can mark a well-formed response as retryable", async () => {
   let attempt = 0;
   const { fetch } = fakeFetch({

@@ -148,6 +148,27 @@ test("uses the disk copy across restarts and when the upstream is down", async (
   assert.ok(offline.calls.length > 0);
 });
 
+test("one unavailable directory does not block the other sources", async () => {
+  const { fetch } = fakeFetch({
+    "https://www.cninfo.com.cn/new/data/szse_stock.json": () => new Response("", { status: 503 }),
+    "https://www.cninfo.com.cn/new/data/hke_stock.json": LIST_ROUTES["https://www.cninfo.com.cn/new/data/hke_stock.json"]!,
+    [TOP_SEARCH]: (call) =>
+      json(
+        call.form.keyWord === "600519"
+          ? [{ code: "600519", category: "A股", type: "shj", orgId: "gssh0600519", zwjc: "贵州茅台" }]
+          : [],
+      ),
+  });
+  const directory = new SecurityDirectory(testClient(fetch), await tempDir());
+  // a Hong Kong name resolves from the healthy Hong Kong list
+  assert.equal((await directory.resolve("腾讯控股")).code, "00700");
+  // an A-share code falls through to the suggestion API
+  assert.equal((await directory.resolve("600519")).orgId, "gssh0600519");
+  // when nothing answers, the outage is reported instead of a misleading "not found"
+  await assert.rejects(directory.resolve("000001"), /security list/);
+  await assert.rejects(directory.resolve("不存在的公司"), /security list/);
+});
+
 test("fails clearly when the list is unavailable and nothing is cached", async () => {
   const { fetch } = fakeFetch({});
   const directory = new SecurityDirectory(testClient(fetch), await tempDir());

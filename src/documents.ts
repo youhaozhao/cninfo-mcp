@@ -500,9 +500,10 @@ export async function extractPdf(url: string, bytes: Uint8Array): Promise<Docume
   const task = pdfjs.getDocument({
     data: new Uint8Array(bytes),
     // 中文 PDF 常依赖预定义 CMap（如 GBK-EUC-H），缺失会得到乱码
-    cMapUrl: path.join(assets, "cmaps") + path.sep,
+    // pdf.js 要求资源目录以 "/" 结尾（Windows 上也是），之后直接与文件名拼接读取
+    cMapUrl: `${path.join(assets, "cmaps")}/`,
     cMapPacked: true,
-    standardFontDataUrl: path.join(assets, "standard_fonts") + path.sep,
+    standardFontDataUrl: `${path.join(assets, "standard_fonts")}/`,
     useSystemFonts: false,
     disableFontFace: true,
     isEvalSupported: false,

@@ -231,9 +231,17 @@ export class HttpClient {
     const timeoutMs = options.timeoutMs ?? this.options.timeoutMs;
 
     await this.acquire();
+    // 不用 AbortSignal.timeout：它的定时器不会阻止进程退出，
+    // 在没有其他活动句柄时超时永远不会触发。这里用普通定时器并在结束时清除。
+    const timeout = new AbortController();
+    const timer = setTimeout(
+      () => timeout.abort(new DOMException("The operation timed out", "TimeoutError")),
+      timeoutMs,
+    );
     try {
-      const timeout = AbortSignal.timeout(timeoutMs);
-      const signal = options.signal ? AbortSignal.any([timeout, options.signal]) : timeout;
+      const signal = options.signal
+        ? AbortSignal.any([timeout.signal, options.signal])
+        : timeout.signal;
       const headers: Record<string, string> = {
         "User-Agent": this.options.userAgent,
         "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.6",
@@ -296,6 +304,7 @@ export class HttpClient {
         );
       }
     } finally {
+      clearTimeout(timer);
       this.release();
     }
   }

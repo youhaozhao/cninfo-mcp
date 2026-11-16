@@ -1,0 +1,50 @@
+# cninfo-mcp
+
+> cninfo-mcp is an open-source Model Context Protocol (MCP) server for China A-share research. It lets AI assistants such as Claude search company announcements, read annual reports and prospectuses, and fetch financial and shareholder data from CNINFO (巨潮资讯网, cninfo.com.cn), the disclosure website designated by the China Securities Regulatory Commission.
+
+Key facts:
+
+- Run it with `npx -y @youhaozhao/cninfo-mcp` (stdio transport). Requires Node.js 22.13 or newer. No Python, no API key, no account.
+- Claude Code: `claude mcp add cninfo -- npx -y @youhaozhao/cninfo-mcp`
+- Current version: 3.0.0. License: MIT. Source: https://github.com/youhaozhao/cninfo-mcp
+- Unofficial community project. Not a CNINFO product and not affiliated with Shenzhen Securities Information Co., Ltd. Not investment advice.
+- Tools (8): search_securities, list_reports, search_announcements, read_document, get_financials, get_company_data, download_reports, download_documents
+- Coverage: companies listed in Shanghai, Shenzhen and Beijing (main boards, ChiNext, STAR Market); Hong Kong announcements are searchable. No real-time quotes or price history.
+- Filings are in Chinese. Stock arguments accept a code (600519, 000001.SZ, 00700.HK) or a Chinese short name (贵州茅台).
+
+## Documentation in English
+
+- [cninfo-mcp: MCP server for China A-share filings on CNINFO](https://youhaozhao.github.io/cninfo-mcp/en/): Open-source MCP server for China A-share research. Lets Claude and other AI assistants search CNINFO filings, read annual reports and pull financial data.
+- [Install and configure](https://youhaozhao.github.io/cninfo-mcp/en/install): Install the cninfo-mcp CNINFO MCP server in Claude Code, Claude Desktop, Cursor, VS Code, Codex CLI and other MCP clients. Configuration and troubleshooting.
+- [FAQ](https://youhaozhao.github.io/cninfo-mcp/en/faq): Answers about cninfo-mcp, the open-source CNINFO MCP server: official status, cost, supported clients, markets, English filings, data accuracy and rate limits.
+- [Guides](https://youhaozhao.github.io/cninfo-mcp/en/guides/): Task-based guides for cninfo-mcp: read Chinese annual reports with an AI assistant, download filings in bulk, and choose how to get data from CNINFO.
+- [Is there a CNINFO API?](https://youhaozhao.github.io/cninfo-mcp/en/guides/cninfo-api): Three ways to get data from CNINFO, the CSRC-designated disclosure site: the official data service, the website's own endpoints, and the cninfo-mcp server.
+- [Download annual reports of Chinese listed companies](https://youhaozhao.github.io/cninfo-mcp/en/guides/download-annual-reports): Three ways to get A-share annual reports as PDF: download from CNINFO by hand, have an AI assistant fetch every year with cninfo-mcp, or read without saving.
+- [Read Chinese annual reports with AI](https://youhaozhao.github.io/cninfo-mcp/en/guides/read-annual-reports-with-ai): Read A-share annual reports with Claude and cninfo-mcp: table of contents, keyword search and page ranges, with answers in English and page references.
+- [Tools and configuration reference](https://youhaozhao.github.io/cninfo-mcp/en/reference/tools): Reference for the eight cninfo-mcp tools: security search, report listings, announcement search, document reading, financial data and downloads.
+
+## Documentation in Chinese (中文文档)
+
+- [巨潮资讯 MCP 服务器 cninfo-mcp：让 AI 查 A 股公告、读年报](https://youhaozhao.github.io/cninfo-mcp/): cninfo-mcp 是面向 A 股投研的开源 MCP 服务器：让 Claude、Cursor 等 AI 助手在巨潮资讯网检索公告、阅读年报和招股书正文、获取财务与股东数据。只需 Node.js，无需 API Key。
+- [安装与配置](https://youhaozhao.github.io/cninfo-mcp/install): 在 Claude Code、Claude Desktop、Cursor、VS Code、Codex CLI、Cherry Studio、Trae、OpenClaw 等客户端安装 cninfo-mcp 巨潮资讯 MCP 服务器，以及环境变量、自检和常见安装问题。
+- [常见问题](https://youhaozhao.github.io/cninfo-mcp/faq): 关于 cninfo-mcp 的常见问题：是否官方、是否收费、支持哪些客户端和市场、能否查行情、财务数据口径、批量下载年报、403 限流，以及合规与安全边界。
+- [使用指南](https://youhaozhao.github.io/cninfo-mcp/guides/): cninfo-mcp 使用指南：用 AI 读年报、下载历年年报、检索公告和调研记录、获取财务与股东数据、查找招股说明书，以及巨潮资讯 API 和 A 股 MCP 服务器的选型说明。
+- [A 股 MCP 服务器怎么选：行情、财务数据与披露文件](https://youhaozhao.github.io/cninfo-mcp/guides/a-share-mcp-servers): 按数据来源梳理常见的 A 股 MCP 服务器：基于 BaoStock、AKShare、Tushare 的行情与数据类服务器，以及读取巨潮资讯网披露文件的 cninfo-mcp，并说明怎样组合使用。
+- [巨潮资讯网有 API 吗？官方数据服务、爬虫与 MCP](https://youhaozhao.github.io/cninfo-mcp/guides/cninfo-api): 巨潮资讯网的三种取数方式：官方的深证信数据服务平台、网页自身使用的查询接口（写爬虫），以及面向 AI 助手的 cninfo-mcp。说明各自的特点、限制和适合的场景。
+- [巨潮资讯网年报下载：单份、历年与批量](https://youhaozhao.github.io/cninfo-mcp/guides/download-annual-reports): 下载上市公司年报 PDF 的三种方法：在巨潮资讯网手动下载，让 AI 助手用 cninfo-mcp 一句话下载一家公司历年的年报，或者只读不存。附文件命名、保存位置和批量下载的注意事项。
+- [A 股财务数据与股东数据：不翻 PDF 直接取数](https://youhaozhao.github.io/cninfo-mcp/guides/financial-data): 用 AI 助手和 cninfo-mcp 获取 A 股上市公司的结构化数据：财务指标、利润表、资产负债表、现金流量表，以及十大股东、股东人数、分红、质押、解禁、融资融券等 15 个数据集。
+- [招股说明书：在哪下载，怎么读](https://youhaozhao.github.io/cninfo-mcp/guides/prospectus): 在巨潮资讯网查找和下载上市公司的招股说明书与招股意向书，并让 AI 助手用 cninfo-mcp 提炼业务与技术、募集资金用途、风险因素和客户供应商等关键信息。
+- [用 AI 读年报：带页码的答案怎么来](https://youhaozhao.github.io/cninfo-mcp/guides/read-annual-reports-with-ai): 用 Claude 等 AI 助手配合 cninfo-mcp 阅读 A 股年报：先看目录，再按关键字定位，只读相关的几页，让回答带上报告页码。附可以直接使用的提问模板。
+- [上市公司公告查询：业绩预告、回购与调研记录](https://youhaozhao.github.io/cninfo-mcp/guides/search-announcements): 用 AI 助手和 cninfo-mcp 检索巨潮资讯网的上市公司公告：按公司、标题关键字、26 个公告分类、板块和日期筛选，支持全市场检索业绩预告，以及查询投资者关系活动记录表。
+- [工具与配置参考](https://youhaozhao.github.io/cninfo-mcp/reference/tools): cninfo-mcp 全部 8 个 MCP 工具的参数说明：证券查找、定期报告与招股书、公告检索、文档阅读、财务与股东数据、PDF 下载，以及公告分类、数据集和环境变量配置。
+- [参考文档](https://youhaozhao.github.io/cninfo-mcp/reference/): cninfo-mcp 的参考文档：工具与配置、性能与稳定性、安全边界、升级指南和开发说明。内容同步自 GitHub 仓库，与已发布的版本保持一致。
+- [开发与测试](https://youhaozhao.github.io/cninfo-mcp/reference/development): 在本地运行 cninfo-mcp 的单元测试、类型检查、联网冒烟测试和打包构建，以及源码结构说明。
+- [性能与稳定性](https://youhaozhao.github.io/cninfo-mcp/reference/reliability): cninfo-mcp 如何应对巨潮资讯网的限流：全局限速、403 冷却重试、证券目录与文档缓存，以及用 complete 字段标明结果是否完整。
+- [安全边界](https://youhaozhao.github.io/cninfo-mcp/reference/security): cninfo-mcp 的安全设计：只访问巨潮资讯网的两个 HTTPS 主机，只在下载目录内写文件，不读取任何凭据，并为每个工具声明只读或写入注解。
+- [升级指南](https://youhaozhao.github.io/cninfo-mcp/reference/upgrading): 从 cninfo-mcp 2.x 及更早版本升级到 3.0：不再需要 Python，工具改名并扩充到 8 个，下载文件名和并发控制方式的变化。
+
+## Optional
+
+- [Source code on GitHub](https://github.com/youhaozhao/cninfo-mcp): TypeScript source, issue tracker and release history
+- [npm package](https://www.npmjs.com/package/@youhaozhao/cninfo-mcp): published builds of @youhaozhao/cninfo-mcp
+- [All documentation as one file](https://youhaozhao.github.io/cninfo-mcp/llms-full.txt): every page of this site as Markdown

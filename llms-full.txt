@@ -1,0 +1,2219 @@
+# cninfo-mcp documentation
+
+> 25 pages from https://youhaozhao.github.io/cninfo-mcp/. Summary and key facts: https://youhaozhao.github.io/cninfo-mcp/llms.txt
+
+<!-- https://youhaozhao.github.io/cninfo-mcp/en/install -->
+
+# Install and configure
+
+cninfo-mcp is published on npm as `@youhaozhao/cninfo-mcp`. It starts with `npx` and speaks MCP over stdio, so it works with any client that supports local MCP servers.
+
+## Prerequisite: Node.js 22.13+ {#prerequisites}
+
+Node.js 22.13 or newer is the only requirement. No Python and nothing else to install.
+
+```bash
+node -v   # should print v22.13.0 or higher
+```
+
+If your version is older, install the current LTS release from [nodejs.org](https://nodejs.org/) or upgrade with a version manager such as nvm or fnm.
+
+## Install by client {#clients}
+
+### Claude Code {#claude-code}
+
+```bash
+claude mcp add cninfo -- npx -y @youhaozhao/cninfo-mcp
+```
+
+By default the server is added for the current project only. To use it in every project, add `--scope user`:
+
+```bash
+claude mcp add --scope user cninfo -- npx -y @youhaozhao/cninfo-mcp
+```
+
+Run `/mcp` inside Claude Code to see the connection status and the list of tools.
+
+::: details Native Windows (not WSL)
+On native Windows, local MCP servers started with `npx` need a `cmd /c` wrapper:
+
+```bash
+claude mcp add cninfo -- cmd /c npx -y @youhaozhao/cninfo-mcp
+```
+
+:::
+
+### Claude Desktop {#claude-desktop}
+
+Open Settings → Developer → Edit Config, add the block below, and restart the app. The config file is at:
+
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "cninfo": {
+      "command": "npx",
+      "args": ["-y", "@youhaozhao/cninfo-mcp"]
+    }
+  }
+}
+```
+
+### Cursor {#cursor}
+
+Add this to `~/.cursor/mcp.json` (global) or to `.cursor/mcp.json` in a project:
+
+```json
+{
+  "mcpServers": {
+    "cninfo": {
+      "command": "npx",
+      "args": ["-y", "@youhaozhao/cninfo-mcp"]
+    }
+  }
+}
+```
+
+If Cursor is installed, this button writes the same configuration for you:
+
+
+### VS Code {#vs-code}
+
+From the command line:
+
+```bash
+code --add-mcp '{"name":"cninfo","command":"npx","args":["-y","@youhaozhao/cninfo-mcp"]}'
+```
+
+Or in `.vscode/mcp.json` in your workspace (note that VS Code uses the key `servers`):
+
+```json
+{
+  "servers": {
+    "cninfo": {
+      "command": "npx",
+      "args": ["-y", "@youhaozhao/cninfo-mcp"]
+    }
+  }
+}
+```
+
+
+### Codex CLI {#codex}
+
+```bash
+codex mcp add cninfo -- npx -y @youhaozhao/cninfo-mcp
+```
+
+This is equivalent to adding the following to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.cninfo]
+command = "npx"
+args = ["-y", "@youhaozhao/cninfo-mcp"]
+```
+
+### Gemini CLI {#gemini-cli}
+
+Add the `mcpServers` block from the [generic configuration](#generic) to `~/.gemini/settings.json`, or to `.gemini/settings.json` in a project.
+
+### OpenClaw {#openclaw}
+
+```bash
+openclaw mcp add cninfo --command npx --arg -y --arg @youhaozhao/cninfo-mcp
+openclaw mcp doctor cninfo --probe
+```
+
+The [OpenClaw documentation](https://docs.openclaw.ai/tools/mcp) says the local Gateway has to be stopped before saved servers are changed, so stop it first and start it again afterwards.
+
+### Other clients (generic configuration) {#generic}
+
+Cline, Windsurf, Zed, Cherry Studio and other clients keep their configuration in different places, but the content is the same: the command `npx` with the arguments `-y` and the package name.
+
+```json
+{
+  "mcpServers": {
+    "cninfo": {
+      "command": "npx",
+      "args": ["-y", "@youhaozhao/cninfo-mcp"]
+    }
+  }
+}
+```
+
+## Check that it works {#verify}
+
+To confirm that your machine can reach CNINFO, run the online self-test. It queries annual reports on the Shanghai, Shenzhen and Beijing exchanges, calls the financial data endpoint once and reads one document:
+
+```bash
+npx -y @youhaozhao/cninfo-mcp probe
+```
+
+```txt
+[OK  ] 年报查询 沪市 SSE: 600519=27
+[OK  ] 年报查询 深市 SZSE: 000001=25
+[OK  ] 年报查询 北交所 BSE: 920185=5
+[OK  ] 财务数据 data20: 3 periods, 6 rows
+[OK  ] 文档读取 static: 贵州茅台2026年第三季度报告: 12 pages, 11065 chars
+
+全部探测通过。
+```
+
+The last line means that every probe passed. There is also an offline check that only verifies the installation itself (PDF text extraction):
+
+```bash
+npx -y @youhaozhao/cninfo-mcp selftest
+```
+
+Then try a first question in your client:
+
+> Find the latest annual report of Kweichow Moutai (600519) and tell me how many pages it has and what the main sections are.
+
+## Configuration {#configuration}
+
+Everything is set through environment variables, and all of them are optional.
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `CNINFO_MCP_DOWNLOAD_DIR` | Download root. The download tools can only write inside it | `~/Downloads/cninfo-mcp` |
+| `CNINFO_MCP_CACHE_DIR` | Cache for the securities list and for documents that were read | `cninfo-mcp` in the platform cache directory |
+| `CNINFO_MCP_CACHE_MAX_MB` | Document cache limit; least recently used files are evicted beyond it | `1024` |
+| `CNINFO_MCP_CONCURRENCY` | Simultaneous requests to CNINFO (1 to 8) | `4` |
+
+In a JSON configuration, use the `env` field:
+
+```json
+{
+  "mcpServers": {
+    "cninfo": {
+      "command": "npx",
+      "args": ["-y", "@youhaozhao/cninfo-mcp"],
+      "env": {
+        "CNINFO_MCP_DOWNLOAD_DIR": "/Users/me/Research/filings"
+      }
+    }
+  }
+}
+```
+
+In Claude Code, use `--env` (options go before the server name):
+
+```bash
+claude mcp add --env CNINFO_MCP_DOWNLOAD_DIR=/Users/me/Research/filings cninfo -- npx -y @youhaozhao/cninfo-mcp
+```
+
+The remaining options (request timeout, debug logging) are listed in the [tools reference](/en/reference/tools#configuration).
+
+::: warning Do not raise the concurrency
+CNINFO answers bursts of requests with HTTP 403 and blocks the IP address for a while. The server already rate-limits all upstream requests and backs off when throttled, so the default is the right setting.
+:::
+
+## Upgrade and uninstall {#upgrade}
+
+- **Check the version**: `npx -y @youhaozhao/cninfo-mcp --version`
+- **Upgrade**: `npx` may keep using a version it has already cached. Write the package name as `@youhaozhao/cninfo-mcp@latest` in your configuration to run the latest release on every start.
+- **Coming from 2.x or earlier**: 3.0 is a breaking release with renamed tools and no Python dependency. The [upgrade guide](/reference/upgrading) (in Chinese) lists the changes.
+- **Uninstall**: remove the `cninfo` entry from your client configuration (`claude mcp remove cninfo` in Claude Code). The download and cache folders can be deleted by hand.
+
+## Troubleshooting {#troubleshooting}
+
+### The client reports that the server failed to connect
+
+Check that `node -v` is at least 22.13. Desktop apps such as Claude Desktop do not always see the Node.js path configured in your shell; in that case set `command` to the absolute path of `npx` (`which npx` on macOS and Linux, `where npx` on Windows).
+
+### Queries fail with 403 or a rate-limit message
+
+That is CNINFO throttling. The server pauses and retries automatically, and it usually recovers within a short while. Do not raise `CNINFO_MCP_CONCURRENCY`, and avoid running several clients against CNINFO at the same time.
+
+### A document comes back empty
+
+Some older filings are scanned images with no text layer, so their content cannot be read as text. `read_document` says so in its result.
+
+More answers are in the [FAQ](/en/faq). To report a problem, open an issue on [GitHub](https://github.com/youhaozhao/cninfo-mcp/issues).
+
+---
+
+<!-- https://youhaozhao.github.io/cninfo-mcp/install -->
+
+# 安装与配置
+
+cninfo-mcp 以 npm 包 `@youhaozhao/cninfo-mcp` 发布，通过 `npx` 启动，使用 stdio 传输。任何支持 MCP 的客户端都可以接入，下面按客户端给出写法。
+
+## 准备：Node.js 22.13+ {#prerequisites}
+
+唯一的依赖是 Node.js 22.13 或更高版本。不需要 Python，也没有其他要另外安装的东西。
+
+```bash
+node -v   # 应输出 v22.13.0 或更高
+```
+
+版本过低时，到 [nodejs.org](https://nodejs.org/) 下载 LTS 版本，或者用 nvm、fnm 等版本管理器升级。
+
+::: tip 下载慢？
+`npx` 第一次运行时要从 npm 下载这个包（解压后约 7 MB，自带全部依赖）。网络不稳定时，可以先把 npm 切换到镜像源：
+
+```bash
+npm config set registry https://registry.npmmirror.com
+```
+
+:::
+
+## 按客户端安装 {#clients}
+
+### Claude Code {#claude-code}
+
+```bash
+claude mcp add cninfo -- npx -y @youhaozhao/cninfo-mcp
+```
+
+默认只对当前项目生效。想在所有项目里使用，加上 `--scope user`：
+
+```bash
+claude mcp add --scope user cninfo -- npx -y @youhaozhao/cninfo-mcp
+```
+
+装好之后在 Claude Code 里输入 `/mcp`，可以看到 `cninfo` 的连接状态和工具列表。
+
+::: details 原生 Windows（非 WSL）
+在原生 Windows 上，用 `npx` 启动的本地 MCP 服务器需要用 `cmd /c` 包一层：
+
+```bash
+claude mcp add cninfo -- cmd /c npx -y @youhaozhao/cninfo-mcp
+```
+
+:::
+
+::: details 作为 Claude Code 插件安装
+cninfo-mcp 也收录在 [china-fin-toolkit](https://github.com/youhaozhao/china-fin-toolkit) 插件市场里，可以和其中的技能一起安装：
+
+```txt
+/plugin marketplace add youhaozhao/china-fin-toolkit
+/plugin install cninfo-mcp@china-fin-toolkit
+```
+
+:::
+
+### Claude Desktop {#claude-desktop}
+
+打开「设置 → 开发者 → 编辑配置」，在配置文件里加入以下内容，然后重启客户端。配置文件位于：
+
+- macOS：`~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows：`%APPDATA%\Claude\claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "cninfo": {
+      "command": "npx",
+      "args": ["-y", "@youhaozhao/cninfo-mcp"]
+    }
+  }
+}
+```
+
+### Cursor {#cursor}
+
+把下面的内容写入 `~/.cursor/mcp.json`（全局），或项目根目录下的 `.cursor/mcp.json`（只对该项目生效）：
+
+```json
+{
+  "mcpServers": {
+    "cninfo": {
+      "command": "npx",
+      "args": ["-y", "@youhaozhao/cninfo-mcp"]
+    }
+  }
+}
+```
+
+已经安装 Cursor 的话，也可以直接点击下面的按钮，由 Cursor 写入同样的配置：
+
+
+### VS Code {#vs-code}
+
+用命令行添加：
+
+```bash
+code --add-mcp '{"name":"cninfo","command":"npx","args":["-y","@youhaozhao/cninfo-mcp"]}'
+```
+
+或者在工作区的 `.vscode/mcp.json` 里写入（注意 VS Code 的键名是 `servers`）：
+
+```json
+{
+  "servers": {
+    "cninfo": {
+      "command": "npx",
+      "args": ["-y", "@youhaozhao/cninfo-mcp"]
+    }
+  }
+}
+```
+
+
+### Codex CLI {#codex}
+
+```bash
+codex mcp add cninfo -- npx -y @youhaozhao/cninfo-mcp
+```
+
+等价于在 `~/.codex/config.toml` 里加入：
+
+```toml
+[mcp_servers.cninfo]
+command = "npx"
+args = ["-y", "@youhaozhao/cninfo-mcp"]
+```
+
+### Gemini CLI {#gemini-cli}
+
+在 `~/.gemini/settings.json`（或项目内的 `.gemini/settings.json`）里加入[通用配置](#generic)中的 `mcpServers` 一段。
+
+### Cherry Studio {#cherry-studio}
+
+打开「设置 → MCP 服务器 → 添加服务器」，类型选择 **STDIO**，命令填 `npx`，参数每行一个：
+
+```txt
+-y
+@youhaozhao/cninfo-mcp
+```
+
+也可以选择从 JSON 导入，粘贴下面的[通用配置](#generic)。
+
+### Trae {#trae}
+
+在 MCP 管理页选择「添加 → 手动配置」，粘贴下面的[通用配置](#generic)。
+
+### OpenClaw {#openclaw}
+
+```bash
+openclaw mcp add cninfo --command npx --arg -y --arg @youhaozhao/cninfo-mcp
+openclaw mcp doctor cninfo --probe
+```
+
+按 [OpenClaw 文档](https://docs.openclaw.ai/tools/mcp)的说明，增删已保存的服务器之前需要先停止本地 Gateway，改完再启动。
+
+### 其他客户端（通用配置） {#generic}
+
+Cline、Windsurf、Zed 等客户端的配置文件位置各不相同，但内容都是同一段：命令 `npx`，参数 `-y` 和包名。
+
+```json
+{
+  "mcpServers": {
+    "cninfo": {
+      "command": "npx",
+      "args": ["-y", "@youhaozhao/cninfo-mcp"]
+    }
+  }
+}
+```
+
+## 验证安装 {#verify}
+
+想先确认本机能连上巨潮资讯网，可以运行联网自检。它会实际查询沪、深、北交所的年报，调用一次财务数据接口，并读取一份文档：
+
+```bash
+npx -y @youhaozhao/cninfo-mcp probe
+```
+
+```txt
+[OK  ] 年报查询 沪市 SSE: 600519=27
+[OK  ] 年报查询 深市 SZSE: 000001=25
+[OK  ] 年报查询 北交所 BSE: 920185=5
+[OK  ] 财务数据 data20: 3 periods, 6 rows
+[OK  ] 文档读取 static: 贵州茅台2026年第三季度报告: 12 pages, 11065 chars
+
+全部探测通过。
+```
+
+另有一个不联网的自检，只检查安装本身（PDF 文本提取）是否可用：
+
+```bash
+npx -y @youhaozhao/cninfo-mcp selftest
+```
+
+然后在客户端里试一句：
+
+> 查一下贵州茅台最新的年报，告诉我一共多少页、目录里有哪些章节。
+
+## 配置 {#configuration}
+
+全部通过环境变量设置，都可以省略。
+
+| 环境变量 | 说明 | 默认值 |
+| --- | --- | --- |
+| `CNINFO_MCP_DOWNLOAD_DIR` | 下载根目录，下载工具只能写入这个目录 | `~/Downloads/cninfo-mcp` |
+| `CNINFO_MCP_CACHE_DIR` | 证券列表、已读取文档及其文本的缓存目录 | 系统缓存目录下的 `cninfo-mcp` |
+| `CNINFO_MCP_CACHE_MAX_MB` | 文档缓存上限，超出后淘汰最久未使用的文件 | `1024` |
+| `CNINFO_MCP_CONCURRENCY` | 同时向巨潮发起的请求数（1–8） | `4` |
+
+在 JSON 配置里用 `env` 字段设置：
+
+```json
+{
+  "mcpServers": {
+    "cninfo": {
+      "command": "npx",
+      "args": ["-y", "@youhaozhao/cninfo-mcp"],
+      "env": {
+        "CNINFO_MCP_DOWNLOAD_DIR": "/Users/me/Research/filings"
+      }
+    }
+  }
+}
+```
+
+Claude Code 用 `--env`（选项要写在服务器名称之前）：
+
+```bash
+claude mcp add --env CNINFO_MCP_DOWNLOAD_DIR=/Users/me/Research/filings cninfo -- npx -y @youhaozhao/cninfo-mcp
+```
+
+其余选项（请求超时、调试日志）见[工具与配置参考](/reference/tools#配置)。
+
+::: warning 不建议调高并发
+巨潮资讯网会对短时间内的大量请求返回 403，并暂时封禁 IP。服务器已经对所有上游请求统一限速，被限流时自动冷却重试，保持默认值即可。原理见[性能与稳定性](/reference/reliability)。
+:::
+
+## 升级与卸载 {#upgrade}
+
+- **查看版本**：`npx -y @youhaozhao/cninfo-mcp --version`
+- **升级**：`npx` 可能继续使用本机已缓存的旧版本。把配置里的包名写成 `@youhaozhao/cninfo-mcp@latest`，每次启动都会使用最新发布的版本。
+- **从 2.x 及更早版本升级**：3.0 是一次不兼容升级，工具名称和参数有变化，见[升级指南](/reference/upgrading)。
+- **卸载**：从客户端配置里删除 `cninfo` 一项（Claude Code 运行 `claude mcp remove cninfo`）。下载目录和缓存目录可以手动删除。
+
+## 安装时的常见问题 {#troubleshooting}
+
+### 启动后客户端提示连接失败
+
+先确认 `node -v` 不低于 22.13。图形界面客户端（如 Claude Desktop）有时读不到终端里配置的 Node 路径，可以把 `command` 改成 `npx` 的绝对路径（macOS 和 Linux 上用 `which npx` 查看，Windows 上用 `where npx`）。
+
+### 查询时报 403 或提示被限流
+
+这是巨潮资讯网的限流。服务器会自动冷却后重试，通常等待片刻即可恢复。不要调高 `CNINFO_MCP_CONCURRENCY`，也不要同时开多个客户端并发查询。
+
+### 文档读出来是空的
+
+部分早期公告是扫描件，没有文本层，无法读出正文。`read_document` 会在结果里给出提示。
+
+更多问题见[常见问题](/faq)，或在 [GitHub Issues](https://github.com/youhaozhao/cninfo-mcp/issues) 反馈。
+
+---
+
+<!-- https://youhaozhao.github.io/cninfo-mcp/en/faq -->
+
+# Frequently asked questions
+
+## About the project
+
+### What is cninfo-mcp?
+
+cninfo-mcp is an open-source Model Context Protocol (MCP) server. Once connected, an AI assistant such as Claude can search company announcements, read annual reports and prospectuses, fetch financial and shareholder data, and download PDFs from CNINFO. It is built for research on China A-shares and provides eight tools, listed in the [tools reference](/en/reference/tools).
+
+### What is CNINFO?
+
+CNINFO (巨潮资讯网, cninfo.com.cn) is the disclosure website for listed companies designated by the China Securities Regulatory Commission, operated by Shenzhen Securities Information Co., Ltd. Announcements and periodic reports of companies listed in Shanghai, Shenzhen and Beijing are published there.
+
+### Is cninfo-mcp an official CNINFO product?
+
+No. It is a community-maintained open-source project with no affiliation, partnership or licence from Shenzhen Securities Information Co., Ltd. It calls the query endpoints that the CNINFO website itself uses, not an official data service, so those endpoints can change, be rate-limited or be withdrawn at any time.
+
+### Is it free? What is the licence?
+
+Yes, it is free. The project is MIT-licensed and the source is on [GitHub](https://github.com/youhaozhao/cninfo-mcp).
+
+## Installing
+
+### What do I need to run it?
+
+Node.js 22.13 or newer. The published package is self-contained and pulls in no other packages at install time. See [Install and configure](/en/install).
+
+### Do I need an API key, an account or Python?
+
+No. The server does not need, and never reads, accounts, cookies or secrets. Since version 3.0 it no longer depends on Python.
+
+### Which AI clients does it work with?
+
+Any client that supports MCP over stdio, including Claude Code, Claude Desktop, Cursor, VS Code, Codex CLI, Gemini CLI, OpenClaw, Cline, Windsurf and Cherry Studio.
+
+### Does it work on Windows?
+
+Yes. Windows, macOS and Linux are supported, and the project's continuous integration installs the published package and runs the offline self-test on all three.
+
+### Does it work outside mainland China?
+
+Yes, as long as your network can reach cninfo.com.cn. Run `npx -y @youhaozhao/cninfo-mcp probe` to check.
+
+## Data and coverage
+
+### Which markets are covered?
+
+Announcement search covers companies listed in Shanghai, Shenzhen and Beijing (including B shares) and Hong Kong announcements; funds and bonds can be searched by code. Report listings, financial data and company data cover Shanghai, Shenzhen and Beijing listings, including the main boards, ChiNext and the STAR Market.
+
+### Are the filings available in English?
+
+Almost all filings on CNINFO are in Chinese. Your assistant reads the Chinese text and can answer in English with page references. Where a company also files an English version of a report, `list_reports` returns it when `include_variants` is set.
+
+### Do I have to write prompts in Chinese?
+
+No. Ask in English and identify companies by stock code, such as `600519` or `000001.SZ`. The tools also accept Chinese short names (贵州茅台), and assistants usually resolve well-known English company names to the right code on their own.
+
+### Does it provide stock prices or price history?
+
+No. cninfo-mcp focuses on disclosures and fundamentals. For quotes and technical indicators, pair it with an MCP server built on a market-data source.
+
+### Can it search the full text of all announcements?
+
+No. Announcements are searched by title keyword. Inside a single document, `read_document` can locate keywords with its `query` argument.
+
+### How many periods of financial data are available?
+
+`get_financials` returns key ratios, the income statement, the balance sheet and the cash flow statement for up to the five most recent periods of one period type, which is what the upstream source offers. Statement amounts are in units of 10,000 CNY (万元). Quarterly and semi-annual figures are cumulative year-to-date.
+
+### How accurate is the data?
+
+Announcements and reports are the documents the listed companies filed. The structured data is the condensed view shown on CNINFO's company pages and can differ in definition from the full statements, so check important figures against the filing itself. The tool makes no guarantee of accuracy, completeness or timeliness.
+
+## Using it
+
+### Do I need to download a report to read it?
+
+No. `read_document` reads the PDF text directly. The download tools are only for keeping a local copy. See [Read Chinese annual reports with AI](/en/guides/read-annual-reports-with-ai).
+
+### Can I download annual reports in bulk?
+
+Yes. Ask the assistant to download a company's annual reports without naming a year and `download_reports` saves every year available. Keep the default concurrency and do not use the tool for high-frequency or large-scale scraping. See [Download Chinese annual reports](/en/guides/download-annual-reports).
+
+### Why do I get HTTP 403?
+
+CNINFO uses 403 to signal rate limiting: too many requests in a short time are answered with 403 and a temporary IP block. The server rate-limits all upstream requests and pauses globally before retrying, so it usually recovers by itself.
+
+### What does complete: false mean in a result?
+
+The result is partial: some pages, datasets or files failed. What was retrieved is still returned, with `warnings` or `errors` describing what is missing. Retrying later usually fills the gap.
+
+## Compliance and safety
+
+### Is it compliant to retrieve data this way?
+
+The project does not host or relay any report content: your own machine fetches everything directly from CNINFO. The website's footer states that its content is copyrighted by Shenzhen Securities Information Co., Ltd., and the reports themselves are disclosed by the listed companies. How you use downloaded files, especially redistribution and commercial use, is for you to verify.
+
+### Which hosts does it contact and which files does it write?
+
+It only contacts `https://www.cninfo.com.cn` (queries and data) and `https://static.cninfo.com.cn` (documents). Only the two download tools write user-visible files, and only inside the download root; apart from that the server writes to its own cache folder.
+
+### Is the output investment advice?
+
+No. The tool retrieves and organises public disclosures. It is not investment advice.
+
+---
+
+<!-- https://youhaozhao.github.io/cninfo-mcp/faq -->
+
+# 常见问题
+
+## 关于项目
+
+### cninfo-mcp 是什么？
+
+cninfo-mcp 是一个开源的 MCP（Model Context Protocol）服务器。接入 Claude 等 AI 助手之后，助手可以在巨潮资讯网上检索公告、阅读年报和招股书正文、获取财务与股东数据，并在需要时下载 PDF。它面向 A 股投研场景，一共提供 8 个工具，见[工具与配置参考](/reference/tools)。
+
+### cninfo-mcp 是巨潮资讯网的官方产品吗？
+
+不是。它是社区维护的开源项目，与巨潮资讯网的运营方深圳证券信息有限公司没有隶属、合作或授权关系。工具调用的是巨潮资讯网网页自身使用的查询接口，不是官方数据服务接口，可能随时变更、限流或停用。
+
+### 巨潮资讯网是什么？
+
+巨潮资讯网（cninfo.com.cn）是中国证监会指定的上市公司信息披露网站，由深圳证券信息有限公司运营。沪、深、北三家交易所上市公司的公告和定期报告都可以在上面查到。
+
+### 它和基于 AKShare、Tushare、BaoStock 的 MCP 服务器有什么区别？
+
+那几类服务器以行情和结构化数据为主。cninfo-mcp 读的是披露文件本身：公告、年报、招股书的正文，以及巨潮个股页上的财务和股东数据，不提供行情。两类工具可以同时接入，各取所长，详见 [A 股 MCP 服务器怎么选](/guides/a-share-mcp-servers)。
+
+### 收费吗？用的是什么许可证？
+
+不收费。项目以 MIT 许可证开源，源码在 [GitHub](https://github.com/youhaozhao/cninfo-mcp)。
+
+## 安装与环境
+
+### 需要什么运行环境？
+
+只需要 Node.js 22.13 或更高版本。发布包自带全部依赖，安装时不会再拉取其他包。各客户端的写法见[安装与配置](/install)。
+
+### 需要 API Key、账号或 Python 吗？
+
+都不需要。服务器不需要、也不读取任何账号、Cookie 或密钥。从 3.0 版本开始也不再依赖 Python。
+
+### 支持哪些 AI 客户端？
+
+任何支持 MCP（stdio 传输）的客户端都可以接入，例如 Claude Code、Claude Desktop、Cursor、VS Code、Codex CLI、Gemini CLI、Cherry Studio、Trae、OpenClaw、Cline 和 Windsurf。
+
+### 支持 Windows 吗？
+
+支持 Windows、macOS 和 Linux。项目的持续集成会在这三个平台上安装发布包并运行离线自检。
+
+### 在中国大陆以外能用吗？
+
+可以，只要所在网络能访问 cninfo.com.cn。可以先运行 `npx -y @youhaozhao/cninfo-mcp probe` 做一次联网自检。
+
+### npx 下载很慢怎么办？
+
+把 npm 切换到镜像源后再试：`npm config set registry https://registry.npmmirror.com`。
+
+## 数据与范围
+
+### 覆盖哪些市场？
+
+公告检索覆盖沪、深、北交所上市公司（含 B 股）和港股公告，基金、债券可以按代码检索公告。定期报告列表、财务数据和公司数据支持沪、深、北交所上市公司，包括主板、创业板和科创板。
+
+### 能查港股吗？
+
+港股公告可以检索：用 `00700.HK` 这样的代码，配合标题关键字。公告分类只适用于沪、深、北交所，港股请用关键字。定期报告列表、财务数据和公司数据不支持港股。
+
+### 能查实时行情、K 线或技术指标吗？
+
+不能。cninfo-mcp 专注披露文件和基本面数据。需要行情时，可以搭配其他数据源的 MCP 服务器。
+
+### 能对公告做全文检索吗？
+
+不能跨公告做全文检索：公告是按标题关键字检索的。读取单个文档时，可以用 `read_document` 的 `query` 参数在文档内按关键字定位。
+
+### 财务数据是什么口径？能取多少期？
+
+`get_financials` 返回主要指标、利润表、资产负债表和现金流量表，每种报告期类型最多最近五期（上游只提供五期）。报表金额单位为万元，是巨潮个股页的精简口径（主要科目）；季报和半年报是年初至报告期末的累计值。需要完整科目时，请用 `read_document` 读报告原文。
+
+### 数据准确吗？
+
+公告和报告是上市公司披露的原文。结构化数据可能与报告原文存在口径差异，重要数字请以披露文件为准。工具不对内容的准确性、完整性和时效性作任何保证。
+
+### 扫描版的 PDF 能读吗？
+
+不能。部分早期公告是扫描件，没有文本层，无法读出正文，`read_document` 会在结果里给出提示。
+
+## 使用
+
+### 股票要写代码还是简称？
+
+都可以。所有 `stock` 参数都接受 `600519`、`000001.SZ`、`00700.HK` 这样的代码，也接受 `贵州茅台` 这样的简称。北交所股票的新旧代码都可以用，例如 `920185` 和 `835185` 指向同一家公司。
+
+### 读年报必须先下载吗？
+
+不需要。`read_document` 直接读取 PDF 正文，下载工具只在你想把文件留在本地时才用得上。读法见[用 AI 读年报](/guides/read-annual-reports-with-ai)。
+
+### 可以批量下载年报吗？
+
+可以。让 AI 调用 `download_reports` 并省略年份，就会下载一家公司全部年份的年报全文；多家公司可以逐家下载。请保持默认的并发限制，不要做高频或大批量抓取。详见[年报下载](/guides/download-annual-reports)。
+
+### 下载的文件保存在哪里？
+
+默认保存在 `~/Downloads/cninfo-mcp`，可以用环境变量 `CNINFO_MCP_DOWNLOAD_DIR` 修改。文件名是 `代码_简称_标题_公告ID.pdf`，目标文件已存在时不会重新下载。
+
+### 为什么会遇到 403？
+
+巨潮资讯网用 403 表示限流：短时间内请求过多时会返回 403，并暂时封禁 IP。服务器对所有上游请求统一限速，被限流时会全局暂停一段时间再重试，通常等待片刻即可恢复。不建议调高 `CNINFO_MCP_CONCURRENCY`。
+
+### 结果里的 complete 为 false 是什么意思？
+
+表示这次结果不完整：部分分页、部分数据集或部分文件失败了。已取得的内容照常返回，同时附带 `warnings` 或 `errors` 说明缺了什么。稍后重试通常可以补齐。
+
+## 合规与安全
+
+### 用它获取数据合规吗？
+
+本项目不托管、不转发任何报告内容，所有数据都由你的机器直接从巨潮资讯网获取。网站页脚标注“深圳证券信息有限公司 版权所有”，报告文件由各上市公司披露；下载后的使用方式，尤其是再分发和商业用途，请自行确认是否合规。使用时请保持默认并发，不要做高频或大批量抓取。
+
+### 它会访问哪些网站、写哪些文件？
+
+只访问 `https://www.cninfo.com.cn`（查询与数据）和 `https://static.cninfo.com.cn`（文档）。只有两个下载工具会写用户可见的文件，并且只写入下载根目录；除此之外，服务器只写自己的缓存目录。详见[安全边界](/reference/security)。
+
+### 输出可以当作投资建议吗？
+
+不可以。工具只负责检索、读取和整理公开披露信息，不构成投资建议。
+
+---
+
+<!-- https://youhaozhao.github.io/cninfo-mcp/en/guides/ -->
+
+# Guides
+
+Each guide covers one research task and includes prompts you can paste into your assistant. If you have not installed the server yet, start with [Install and configure](/en/install).
+
+- [Read Chinese annual reports with AI](/en/guides/read-annual-reports-with-ai): how the assistant reads a 143-page report through its table of contents, keyword search and page ranges, and answers in English with page references.
+- [Download annual reports of Chinese listed companies](/en/guides/download-annual-reports): save every annual report a company has filed with one request, for research or text analysis.
+- [Is there a CNINFO API?](/en/guides/cninfo-api): the official data service, the website's own endpoints, scrapers and MCP, and when to use which.
+
+More guides are available in Chinese: [searching announcements and investor-relations records](/guides/search-announcements), [financial and shareholder data](/guides/financial-data), [IPO prospectuses](/guides/prospectus) and [choosing an A-share MCP server](/guides/a-share-mcp-servers).
+
+For every tool and parameter, see the [tools reference](/en/reference/tools).
+
+---
+
+<!-- https://youhaozhao.github.io/cninfo-mcp/en/guides/cninfo-api -->
+
+# Is there a CNINFO API?
+
+Short answer: there is an official data service, but it is not the same thing as the endpoints the CNINFO website uses when you browse announcements. In practice there are three ways to get data from CNINFO, and they suit different jobs.
+
+| Route | What it is | Good for |
+| --- | --- | --- |
+| Official data service | Data APIs offered by the operator of CNINFO | Stable bulk access, commercial use |
+| Website endpoints (scraping) | The query endpoints the CNINFO pages call themselves | Custom pipelines, if you write code |
+| MCP server | cninfo-mcp wraps search, reading and download as tools an AI assistant can call | Conversational research with an assistant |
+
+## The official data service
+
+Shenzhen Securities Information Co., Ltd., which operates CNINFO, runs a [data service platform](https://webapi.cninfo.com.cn/) (深证信数据服务平台, in Chinese) with data APIs for developers and institutions. You need to register and apply for access; the available interfaces, quotas and pricing are whatever the platform publishes.
+
+If you need dependable access at scale, or data for a commercial product, start there.
+
+## Website endpoints and scrapers
+
+When you search announcements on cninfo.com.cn, the page sends requests to the site's own query endpoints. Many open-source scrapers and data libraries use the same endpoints. They need no key, but there are things to know:
+
+- **Unofficial and undocumented.** They exist for the website, come with no documentation or stability promise, and can change at any time.
+- **Rate-limited.** Too many requests in a short time are answered with HTTP 403 and a temporary IP block.
+- **Full of details.** Querying by company requires mapping the stock code to the site's internal organisation ID first. Lists return at most 30 items per page. Categories and boards have their own codes. A download may turn out to be an error page instead of a PDF when you are throttled.
+- **Periodic reports must be told apart.** The full report, its summary, the English version and correction notices sit in one list and have to be distinguished by title.
+
+Writing your own scraper gives you full control and suits custom processing, if you are prepared to maintain it.
+
+## The MCP server: cninfo-mcp
+
+cninfo-mcp uses the same website endpoints, handles those details, and exposes eight tools to an AI assistant:
+
+- Stock codes and Chinese short names both work and are resolved to the right company.
+- Every request is rate-limited globally, with automatic back-off when throttled, and documents are cached on disk.
+- Full reports, summaries, English versions and revised versions are told apart automatically.
+- PDF text is read directly: table of contents, keyword search inside the document, page ranges.
+- Partial results are flagged with `complete: false`.
+
+It is not a data API or an SDK for your program. It is a set of tools for an assistant: you ask in plain language and the assistant decides what to call.
+
+> Which ChiNext companies published earnings forecasts in the past month?
+
+> What does the 2025 annual report of 600519 say about industry trends for the year ahead?
+
+Installation is one command and needs no API key. See [Install and configure](/en/install).
+
+::: warning Same limits as the website endpoints
+cninfo-mcp is a community-maintained open-source project, not an official CNINFO product. The endpoints it calls can change, be rate-limited or be withdrawn at any time, and it is not suited to high-frequency or large-scale scraping.
+:::
+
+## Which one should you use?
+
+- **Loading the whole market into a database, or building a commercial product**: the official data service or a commercial data vendor.
+- **Fetching data from your own program**: write a scraper or use an open-source data library that wraps these endpoints, and mind the rate limits and terms.
+- **Having an assistant find announcements, read annual reports and compare financials**: cninfo-mcp.
+- **Quotes, price history and technical indicators**: CNINFO is not a market-data source. Use a market-data provider.
+
+## A note on terms
+
+Whichever route you choose, CNINFO's footer states that the site's content is copyrighted by Shenzhen Securities Information Co., Ltd., and the reports are disclosed by the listed companies. Check for yourself whether your intended use, especially redistribution or commercial use, is permitted. The site also publishes a disclaimer that it does not warrant the accuracy or completeness of the information.
+
+## Related
+
+- [Tools reference](/en/reference/tools): the eight tools and their parameters
+- [Read Chinese annual reports with AI](/en/guides/read-annual-reports-with-ai)
+- [Download annual reports of Chinese listed companies](/en/guides/download-annual-reports)
+
+---
+
+<!-- https://youhaozhao.github.io/cninfo-mcp/en/guides/download-annual-reports -->
+
+# Download annual reports of Chinese listed companies
+
+Annual, semi-annual and quarterly reports of companies listed in Shanghai, Shenzhen and Beijing are published on CNINFO (cninfo.com.cn), the disclosure website designated by the China Securities Regulatory Commission, and are free to download. For a single report the website is enough. To collect every report a company has filed, or to have an AI assistant read as it downloads, cninfo-mcp is quicker.
+
+## Option 1: download from CNINFO by hand
+
+1. Open [cninfo.com.cn](https://www.cninfo.com.cn) and search for the stock code to open the company page.
+2. Filter the announcement list by the category for annual reports (年报).
+3. Open the report you need and download the PDF.
+
+The site is in Chinese, and the list mixes the full report with its summary, the English version if there is one, and correction notices, all with similar titles. For Kweichow Moutai's 2025 annual report, three documents were published on the same day:
+
+| Title | What it is |
+| --- | --- |
+| 贵州茅台2025年年度报告 | The full report, 143 pages |
+| 贵州茅台2025年年度报告摘要 | The summary |
+| 贵州茅台2025年年度报告（英文版） | The English version |
+
+## Option 2: ask your AI assistant
+
+With [cninfo-mcp installed](/en/install), say what you want:
+
+> Download the 2025 annual report of Kweichow Moutai (600519)
+
+> Download every annual report of 300750 into the folder catl/annual
+
+The assistant calls `download_reports`. What to expect:
+
+- **Location**: files go to `~/Downloads/cninfo-mcp` by default. Change it with the environment variable `CNINFO_MCP_DOWNLOAD_DIR`. A folder named in your request, such as `catl/annual`, is created inside that directory, and the tool never writes outside it.
+- **File names**: `code_name_title_announcementID.pdf`, for example `600519_贵州茅台_贵州茅台2025年年度报告_1225114741.pdf`.
+- **Full reports only**: summaries and English versions are left out. Revised full texts are included.
+- **No repeated downloads**: files that already exist are skipped, so an interrupted run can simply be started again.
+- **No year means every year**: for Kweichow Moutai that is 27 documents covering fiscal years 2001 to 2025.
+
+The result lists the path of every file. If a file fails, the others are still saved and the failure is reported separately.
+
+## Option 3: read without downloading
+
+If you only need the content, there is nothing to download. The assistant can read the PDF text directly with `read_document`:
+
+> What is the profit distribution plan in the 2025 annual report of 600519? Cite the page.
+
+See [Read Chinese annual reports with AI](/en/guides/read-annual-reports-with-ai).
+
+## English versions
+
+Most companies file in Chinese only. Some also publish an English version of the annual report. To find it, ask for the list including variants:
+
+> List the 2025 annual report of 600519 including summaries and English versions
+
+`list_reports` then returns each document with a `kind` (`main`, `revised`, `summary`, `english`, `h_share`), and the assistant can download the English one by URL with `download_documents`.
+
+## Other report types
+
+| Report | Ask for |
+| --- | --- |
+| Annual report | annual report |
+| Semi-annual report | semi-annual or interim report |
+| First-quarter report | Q1 report |
+| Third-quarter report | Q3 report |
+| IPO prospectus | prospectus |
+
+A prospectus has no fiscal year, so leave the year out.
+
+## Several companies
+
+`download_reports` handles one company per call. Name several companies in one request and the assistant calls the tool for each:
+
+> Download the 2025 annual reports of 600519, 000858 and 000568, one folder per company
+
+::: warning Keep the default concurrency
+CNINFO answers bursts of requests with HTTP 403 and blocks the IP address for a while. cninfo-mcp rate-limits every request and backs off when throttled. It is meant for the reports your research needs, not for scraping the whole market.
+:::
+
+If you need report text for the whole market over many years, for example for a text-analysis study, an official data service or a commercial database is the right source. See [Is there a CNINFO API?](/en/guides/cninfo-api).
+
+## Reuse and redistribution
+
+The reports are disclosed by the listed companies, and CNINFO's footer states that the site's content is copyrighted by Shenzhen Securities Information Co., Ltd. Whether you may redistribute downloaded files or use them commercially is for you to verify.
+
+---
+
+<!-- https://youhaozhao.github.io/cninfo-mcp/en/guides/read-annual-reports-with-ai -->
+
+# Read Chinese annual reports with AI
+
+Annual reports of Chinese listed companies are long, and almost all of them exist only in Chinese. cninfo-mcp lets an AI assistant read them the way an analyst would: look at the table of contents, find the relevant section, read just those pages, and answer with page references you can check. You ask in English, and the assistant reads the Chinese original.
+
+The example below is Kweichow Moutai's 2025 annual report. The output excerpts come from real queries made in November 2026.
+
+## All you need to ask
+
+> What does Kweichow Moutai's 2025 annual report say about industry trends for the year ahead? Cite page numbers.
+
+The assistant does the rest: it finds the report with `list_reports`, uses `read_document` to see the table of contents and locate the section, reads those pages, and answers. There is no PDF to download or upload first.
+
+## How the assistant reads a long report
+
+`read_document` has three modes, which match the three steps of reading a long filing.
+
+### 1. Overview: page count and table of contents
+
+With only a document URL, the tool returns the page count, the character count, the table of contents and the opening pages. An excerpt for this report:
+
+```txt
+PDF · 143 pages · 155700 characters
+Contents:
+第二节公司简介和主要财务指标 (p.5)
+  七、近三年主要会计数据和财务指标 (p.6)
+第三节管理层讨论与分析 (p.8)
+  二、报告期内公司所处行业情况 (p.8)
+  五、报告期内主要经营情况 (p.9)
+  六、公司关于公司未来发展的讨论与分析 (p.21)
+第四节公司治理、环境和社会 (p.23)
+...
+```
+
+For a report of about 155,000 characters, the assistant starts with a map that has page numbers on it.
+
+### 2. Locate: keyword search inside the document
+
+With a `query` (space-separated words, any match counts), the tool returns the pages that match, with snippets:
+
+```txt
+"行业格局 发展趋势" found on 2 page(s)
+
+[p.8] 1 match(es)
+[p.21] 2 match(es)
+```
+
+Page 8 only points forward to the later section; page 21 is where the discussion of the industry landscape and trends begins. The assistant chooses the Chinese keywords itself and decides from the snippets which pages to read.
+
+### 3. Read: specific pages
+
+With `pages` (for example `21-23`), the tool returns the full text of those pages. If the text exceeds the length limit, the result ends with the page range to continue from.
+
+Documents that have been read are cached on your machine, so steps 2 and 3 do not download or parse the file again.
+
+## How a Chinese annual report is organised
+
+A-share annual reports follow a disclosure format set by the regulator, so the same sections appear in largely the same order across companies. Knowing them helps you ask precise questions. These are the eight chapters of the example report:
+
+| Chapter | Chinese title | What it contains |
+| --- | --- | --- |
+| 1 | 释义 | Definitions |
+| 2 | 公司简介和主要财务指标 | Company profile and key financial indicators, including multi-year and quarterly figures |
+| 3 | 管理层讨论与分析 | Management discussion and analysis: industry, operations, core strengths, outlook and risks |
+| 4 | 公司治理、环境和社会 | Corporate governance, directors and executives, dividends, environment and social responsibility |
+| 5 | 重要事项 | Significant events: commitments, related-party transactions, litigation, guarantees |
+| 6 | 股份变动及股东情况 | Changes in share capital and shareholders |
+| 7 | 债券相关情况 | Bonds |
+| 8 | 财务报告 | The audited financial statements and notes |
+
+## Prompts to adapt
+
+Replace the company and year. Asking for page numbers makes every answer easy to verify.
+
+**Management discussion**
+
+> In CATL's 2025 annual report, how does management explain the change in gross margin? Quote the original and cite page numbers.
+
+**Revenue breakdown**
+
+> Break down BYD's 2025 revenue and gross margin by product and by region, using the business analysis in the annual report. Cite page numbers.
+
+**Risks**
+
+> What principal risks does SMIC (688981) disclose in its latest annual report, and what changed compared with the previous year?
+
+**Dividends**
+
+> What is the profit distribution plan in Kweichow Moutai's 2025 annual report?
+
+**Across years**
+
+> Compare the outlook sections of the 2024 and 2025 annual reports of 600519. What changed in the wording?
+
+## Keeping answers verifiable
+
+- **Ask for page numbers.** The assistant reads by page, so every statement can be traced to a page in the PDF.
+- **Check key figures against the filing.** `get_financials` returns the condensed figures shown on CNINFO's company pages, which can differ in definition from the full statements.
+- **Watch for partial results.** A result with `complete: false` is missing something, and a conclusion drawn from it is not the full picture.
+- **Scanned documents cannot be read.** Some older filings have no text layer.
+- **Translations are the assistant's own.** There is no official English text for most filings, so treat quoted translations as a reading aid and refer to the Chinese original for anything that matters.
+
+## Beyond annual reports
+
+The same approach works for semi-annual and quarterly reports, IPO prospectuses and any announcement. Name the report type in your question, for example "the 2026 semi-annual report" or "the IPO prospectus".
+
+To keep local copies, see [Download annual reports of Chinese listed companies](/en/guides/download-annual-reports). The parameters of `read_document` are in the [tools reference](/en/reference/tools#read-document).
+
+---
+
+<!-- https://youhaozhao.github.io/cninfo-mcp/guides/ -->
+
+# 使用指南
+
+每篇指南对应一个具体的研究任务，都附有可以直接粘贴到 AI 助手里的提问方式。还没有安装的话，先看[安装与配置](/install)。
+
+## 读文件
+
+- [用 AI 读年报：带页码的答案怎么来](/guides/read-annual-reports-with-ai)：目录概览、关键字定位、按页读取，让 AI 回答年报里的问题并标注页码。
+- [招股说明书：在哪下载，怎么读](/guides/prospectus)：查找一家公司的招股说明书和招股意向书，让 AI 提炼业务、募投项目和风险因素。
+
+## 找文件
+
+- [巨潮资讯网年报下载：单份、历年与批量](/guides/download-annual-reports)：一句话把一家公司历年的年报 PDF 存到本地。
+- [上市公司公告查询：业绩预告、回购与调研记录](/guides/search-announcements)：按公司、分类、板块和日期检索公告，包括全市场检索和投资者关系活动记录。
+
+## 取数据
+
+- [A 股财务数据与股东数据：不翻 PDF 直接取数](/guides/financial-data)：财务指标、三张报表、十大股东、股东人数、分红、质押、解禁等结构化数据。
+
+## 选工具
+
+- [巨潮资讯网有 API 吗？官方数据服务、爬虫与 MCP](/guides/cninfo-api)：三种取数方式的区别和各自适合的场景。
+- [A 股 MCP 服务器怎么选：行情、财务数据与披露文件](/guides/a-share-mcp-servers)：按数据来源区分常见的 A 股 MCP 服务器，以及怎样组合使用。
+
+## 参考
+
+所有工具的参数、公告分类和数据集见[工具与配置参考](/reference/tools)。
+
+---
+
+<!-- https://youhaozhao.github.io/cninfo-mcp/guides/a-share-mcp-servers -->
+
+# A 股 MCP 服务器怎么选：行情、财务数据与披露文件
+
+给 AI 助手接入 A 股数据的 MCP 服务器已经有不少，名字相近，能力却差别很大。区分它们最有效的办法是看**数据从哪里来**：数据来源决定了能查什么、要不要注册、稳不稳定。
+
+本文按数据来源把它们分成两大类：行情与数据类，披露文件类。信息截至 2026 年 11 月，各项目的具体功能请以它们自己的文档为准。
+
+## 先看你要回答什么问题
+
+| 你想问 AI 的问题 | 需要的数据 | 该用哪一类 |
+| --- | --- | --- |
+| 这只股票最近三个月走势如何？均线和成交量怎么样？ | 行情、K 线、技术指标 | 行情与数据类 |
+| 按市盈率和净资产收益率筛选一批公司 | 全市场的结构化指标 | 行情与数据类 |
+| 年报里管理层怎么解释毛利率下滑？ | 年报正文 | 披露文件类 |
+| 过去一个月哪些公司发布了业绩预告？ | 公告 | 披露文件类 |
+| 招股书里的募投项目现在进展如何？ | 招股书和年报正文 | 披露文件类 |
+| 最近几次机构调研都问了什么？ | 投资者关系活动记录 | 披露文件类 |
+
+## 行情与数据类
+
+这一类服务器把现成的金融数据接口包装成 MCP 工具，长处是行情、K 线和大范围的结构化数据。常见的数据来源有三个。
+
+### BaoStock
+
+免费，不需要注册。以历史 K 线、财务指标和宏观数据为主。代表项目有 [a-share-mcp-is-just-i-need](https://github.com/24mlight/a-share-mcp-is-just-i-need)。
+
+### AKShare
+
+开源的金融数据接口库，数据取自多个公开网站，覆盖面广，除 A 股外也包括港股、美股、基金和期货等。由于依赖的是公开网页，接口会随上游网站变化，也可能被限频。代表项目有 [akshare-one-mcp](https://github.com/zwldarren/akshare-one-mcp)。
+
+### Tushare
+
+数据比较规整，覆盖股票、基金、债券和宏观等。需要注册并获取 token，部分接口有积分要求。代表项目有 [FinanceMCP](https://github.com/guangxiangdebizi/FinanceMCP)。
+
+这几类服务器大多用 Python 编写，需要相应的运行环境。
+
+## 披露文件类：cninfo-mcp
+
+[cninfo-mcp](/) 的数据来自巨潮资讯网，也就是中国证监会指定的上市公司信息披露网站。它处理的是公司披露的**文件本身**：
+
+- 检索公告：按公司、标题关键字、26 个分类、板块和日期筛选，支持全市场检索。
+- 列出并阅读定期报告和招股书：年报、半年报、季报、招股说明书。
+- 直接读取 PDF 正文：先看目录，再按关键字定位，按页读取，回答可以标注页码。
+- 取巨潮个股页上的结构化数据：财务指标、三张报表、股东、分红、质押、解禁等。
+- 下载 PDF 到本地。
+
+它**不提供**实时行情、K 线和技术指标。运行只需要 Node.js，不需要 Python 和 API Key。
+
+## 对比
+
+| | 行情与数据类 | cninfo-mcp |
+| --- | --- | --- |
+| 数据来源 | BaoStock、AKShare、Tushare 等数据接口 | 巨潮资讯网 |
+| 行情、K 线、技术指标 | 有 | 没有 |
+| 公告检索 | 少数项目提供 | 有，支持全市场检索 |
+| 年报、招股书正文阅读 | 一般没有 | 有，按页读取并可标注页码 |
+| 财务数据 | 有，历史期数通常更长 | 有，最近五期的精简口径 |
+| 股东、分红、质押、解禁 | 视项目而定 | 有 |
+| 账号或 token | Tushare 需要；BaoStock、AKShare 不需要 | 不需要 |
+| 运行环境 | 多为 Python | Node.js |
+
+## 组合使用
+
+两类服务器并不冲突，可以同时接入同一个客户端。一个常见的组合是：一个行情与数据类服务器负责行情和筛选，cninfo-mcp 负责读文件和核实。
+
+> 先筛出近三年净资产收益率都高于 15% 的白酒公司，再到它们最新的年报里，看管理层怎么描述行业趋势，标注页码。
+
+第一步由行情与数据类服务器完成，第二步交给 cninfo-mcp。AI 助手会根据问题自己选择用哪个服务器的工具。
+
+## 选择时要看的几件事
+
+- **数据来源是否说明清楚**。来源决定了数据的口径、更新时间和使用条款。
+- **是否仍在维护**。上游接口经常变化，长期不更新的项目容易失效。
+- **需要什么凭据**。需要 token 的服务，要确认配置方式和额度。
+- **对上游是否克制**。会不会因为并发过高被上游限流，甚至封禁 IP。
+- **权限边界**。服务器会访问哪些网站、会不会写本地文件，文档里应该写明。cninfo-mcp 的说明见[安全边界](/reference/security)。
+
+## 接下来
+
+- [安装 cninfo-mcp](/install)
+- [用 AI 读年报](/guides/read-annual-reports-with-ai)
+- [巨潮资讯网有 API 吗](/guides/cninfo-api)
+
+---
+
+<!-- https://youhaozhao.github.io/cninfo-mcp/guides/cninfo-api -->
+
+# 巨潮资讯网有 API 吗？官方数据服务、爬虫与 MCP
+
+简短的回答：有官方的数据服务，但它和大家在巨潮资讯网上浏览公告时用到的接口不是一回事。想从巨潮资讯网取数据，实际上有三条路，适合的场景各不相同。
+
+| 方式 | 是什么 | 适合 |
+| --- | --- | --- |
+| 官方数据服务 | 深证信数据服务平台提供的数据接口 | 稳定的批量取数、商业用途 |
+| 网页接口（爬虫） | 巨潮资讯网页面自身调用的查询接口 | 会写代码、需要自定义流程的研究 |
+| MCP 服务器 | cninfo-mcp 把查询、阅读和下载封装成 AI 可以调用的工具 | 用 AI 助手做对话式的研究 |
+
+## 官方数据服务
+
+巨潮资讯网的运营方深圳证券信息有限公司提供[深证信数据服务平台](https://webapi.cninfo.com.cn/)，面向开发者和机构提供数据接口。使用前需要注册并申请接口权限，接口范围、调用额度和收费方式以平台公布的为准。
+
+如果需要稳定、成规模地取数，或者用于商业产品，这是应该优先考虑的途径。
+
+## 网页接口与爬虫
+
+在巨潮资讯网上搜索公告、筛选分类时，页面会向网站自己的查询接口发请求。很多开源爬虫和数据接口库用的就是这些接口。它们可以直接访问，不需要密钥，但有几个特点需要了解：
+
+- **非官方、无文档**：接口是给网页用的，没有公开的说明，也没有稳定性承诺，可能随时变更。
+- **会限流**：短时间内请求过多时，网站返回 403，并暂时封禁 IP。
+- **细节不少**：按公司查询要先把股票代码换成网站内部的机构编号；公告列表每页最多 30 条，需要自己翻页；公告分类和板块各有一套编码；下载到的也可能不是 PDF，而是限流时返回的错误页面。
+- **定期报告要自己辨认**：年报全文、摘要、英文版和更正公告混在同一个列表里，需要按标题规则区分。
+
+自己写爬虫的好处是完全可控，适合有编程能力、需要自定义处理流程的场景。
+
+## MCP 服务器：cninfo-mcp
+
+cninfo-mcp 用的同样是网页接口，但把上面这些细节都处理掉了，再包装成 8 个工具，交给 AI 助手调用：
+
+- 代码和简称都可以，自动解析到对应的公司，北交所新旧代码都认。
+- 所有请求统一限速，被限流时自动冷却重试；读过的文档缓存在本机。
+- 自动区分报告全文、摘要、英文版和修订版。
+- 直接读取 PDF 正文：给出目录，按关键字定位，按页读取。
+- 结果不完整时用 `complete: false` 明确标出。
+
+它不是给程序调用的数据接口或 SDK，而是给 AI 助手用的工具。你用自然语言提问，助手决定调用哪些工具：
+
+> 过去一个月创业板有哪些公司发布了业绩预告？
+
+> 贵州茅台 2025 年年报里，管理层怎么看明年的行业趋势？
+
+安装只需要一条命令，不需要 API Key，见[安装与配置](/install)。
+
+::: warning 和网页接口一样的限制
+cninfo-mcp 是社区维护的开源项目，不是巨潮资讯网的官方产品。它调用的接口可能随时变更、限流或停用，也不适合做高频或大批量的抓取。
+:::
+
+## 怎么选
+
+- **要把全市场的数据入库，或者用在商业产品里**：用官方数据服务，或者商业数据库。
+- **要在自己的程序里取数**：自己写爬虫，或者使用封装了相关接口的开源数据接口库；注意限流和合规。
+- **想让 AI 帮你查公告、读年报、对比财务数据**：用 cninfo-mcp。
+- **需要行情、K 线和技术指标**：巨潮资讯网不是行情数据源，见 [A 股 MCP 服务器怎么选](/guides/a-share-mcp-servers)。
+
+## 合规提醒
+
+无论用哪种方式，巨潮资讯网页脚都标注“深圳证券信息有限公司 版权所有”，报告文件由各上市公司披露。下载后的使用方式，尤其是再分发和商业用途，请自行确认是否合规。网站同时公布了免责声明，不担保信息的准确性和完整性，使用时请以网站公布的最新内容为准。
+
+## 相关阅读
+
+- [工具与配置参考](/reference/tools)：cninfo-mcp 的 8 个工具和参数
+- [性能与稳定性](/reference/reliability)：限速、重试和缓存是怎么做的
+- [安全边界](/reference/security)：访问哪些主机、写哪些文件
+
+---
+
+<!-- https://youhaozhao.github.io/cninfo-mcp/guides/download-annual-reports -->
+
+# 巨潮资讯网年报下载：单份、历年与批量
+
+上市公司的年报、半年报和季报都披露在巨潮资讯网（cninfo.com.cn）上，可以免费下载。偶尔下一份，官网就够用；要把一家公司历年的年报整理齐，或者想一边下载一边让 AI 帮你读，用 cninfo-mcp 更省事。
+
+## 方法一：在巨潮资讯网手动下载
+
+1. 打开[巨潮资讯网](https://www.cninfo.com.cn)，在搜索框输入股票代码或简称，进入公司页面。
+2. 在公告列表里把分类筛选为“年报”。
+3. 点开要找的那份年度报告，下载 PDF。
+
+需要留意的是，公告列表里除了年报全文，还有年报摘要、英文版和更正公告，标题相近，下载前要看清楚。以贵州茅台 2025 年年报为例，同一天披露的就有三份：
+
+| 标题 | 内容 |
+| --- | --- |
+| 贵州茅台2025年年度报告 | 全文，143 页 |
+| 贵州茅台2025年年度报告摘要 | 摘要 |
+| 贵州茅台2025年年度报告（英文版） | 英文版 |
+
+## 方法二：让 AI 助手下载
+
+[安装 cninfo-mcp](/install) 之后，直接告诉 AI 助手要下载什么：
+
+> 下载贵州茅台 2025 年的年报
+
+> 下载宁德时代全部年份的年报，放到 catl/annual 子目录
+
+AI 会调用 `download_reports`。几点说明：
+
+- **保存位置**：默认是 `~/Downloads/cninfo-mcp`，可以用环境变量 `CNINFO_MCP_DOWNLOAD_DIR` 修改。问题里提到的子目录（如 `catl/annual`）会建在这个目录下面，下载工具不会写到这个目录之外。
+- **文件名**：`代码_简称_标题_公告ID.pdf`，例如 `600519_贵州茅台_贵州茅台2025年年度报告_1225114741.pdf`。
+- **只下载全文**：摘要、英文版不会混进来；标题带“修订”“更正后”等括注的修订版全文会一并下载。
+- **不重复下载**：目标文件已经存在时会跳过，中断之后重新运行即可续上。
+- **省略年份就是全部年份**：例如宁德时代会得到 2018 到 2025 年共 8 份年报。
+
+下载结果会列出每个文件的路径；个别文件失败时，其余文件照常保存，失败的会单独列出。
+
+## 方法三：只想读，不需要存
+
+如果目的是了解报告内容，其实不必下载。AI 可以用 `read_document` 直接读取 PDF 正文：先看目录，再按关键字定位，只读相关的几页。
+
+> 贵州茅台 2025 年年报的利润分配预案是什么？标注页码。
+
+具体读法见[用 AI 读年报](/guides/read-annual-reports-with-ai)。
+
+## 半年报、季报和招股书
+
+同样的说法适用于其他定期报告，在问题里说明报告类型即可：
+
+| 报告类型 | 可以这样说 |
+| --- | --- |
+| 年度报告 | 年报 |
+| 半年度报告 | 半年报、中报 |
+| 第一季度报告 | 一季报 |
+| 第三季度报告 | 三季报 |
+| 招股说明书、招股意向书 | 招股书 |
+
+> 下载比亚迪 2026 年的半年报和三季报
+
+招股书没有固定年份，查询或下载时省略年份即可，见[招股说明书：在哪下载，怎么读](/guides/prospectus)。
+
+## 下载多家公司
+
+`download_reports` 一次处理一家公司。要下载多家公司，在一句话里列出来，AI 会逐家调用：
+
+> 分别下载贵州茅台、五粮液和泸州老窖 2025 年的年报，按公司分目录保存
+
+::: warning 请保持默认并发
+巨潮资讯网会对短时间内的大量请求返回 403，并暂时封禁 IP。cninfo-mcp 对所有请求统一限速，被限流时自动冷却重试，不需要也不建议调高并发。它适合按研究需要下载若干家公司的报告，不适合做全市场的批量抓取。
+:::
+
+需要全市场、多年份的年报文本（例如做文本分析研究）时，更合适的途径是官方数据服务或商业数据库，见[巨潮资讯网有 API 吗](/guides/cninfo-api)。
+
+## 常见问题
+
+### 下载的年报保存在哪里？
+
+默认在 `~/Downloads/cninfo-mcp`。在客户端配置里设置环境变量 `CNINFO_MCP_DOWNLOAD_DIR` 可以换成别的目录，写法见[安装与配置](/install#configuration)。
+
+### 为什么没有年报摘要和英文版？
+
+下载工具只下载报告全文。想看一家公司某一年披露了哪些版本，可以让 AI 列出包含变体的报告清单（`list_reports` 的 `include_variants` 参数），再按地址下载需要的那一份（`download_documents`）。
+
+### 年报后来更正过怎么办？
+
+更新后或修订后的全文会和原版一起返回并下载。“关于年报的更正公告”这类并非报告本身的公告不在定期报告清单里，可以用公告检索查到，见[上市公司公告查询](/guides/search-announcements)。
+
+### 下载的文件可以再分发或商用吗？
+
+报告文件由各上市公司披露，巨潮资讯网页脚标注“深圳证券信息有限公司 版权所有”。下载后的使用方式，尤其是再分发和商业用途，请自行确认是否合规。
+
+---
+
+<!-- https://youhaozhao.github.io/cninfo-mcp/guides/financial-data -->
+
+# A 股财务数据与股东数据：不翻 PDF 直接取数
+
+对比几年的收入和利润、看十大股东的变化、查历年分红，这些问题不需要打开年报。cninfo-mcp 有两个工具直接返回巨潮资讯网个股页上的结构化数据：`get_financials` 取财务数据，`get_company_data` 取公司和股东数据。
+
+这两个工具支持沪、深、北交所的上市公司。下面的示例数据来自 2026 年 11 月的实际查询。
+
+## 财务数据
+
+> 对比宁德时代近五年的收入、净利润、经营现金流和 ROE
+
+AI 会调用 `get_financials`，一次取回需要的报表。可以取四类数据：
+
+| 数据 | 内容 |
+| --- | --- |
+| 主要指标 | 每股收益、每股净资产、净资产收益率、毛利率、净利润率、增长率、资产负债率、流动比率、周转率等 |
+| 利润表 | 营业总收入、营业总成本、营业利润、利润总额、所得税、归属母公司净利润 |
+| 资产负债表 | 主要资产、负债和权益科目 |
+| 现金流量表 | 经营、投资、筹资活动产生的现金流量净额 |
+
+以主要指标为例，宁德时代近五个年度的加权净资产收益率和毛利率是这样返回的：
+
+| 报告期 | 加权净资产收益率(%) | 毛利率(%) | 资产负债率(%) |
+| --- | --- | --- | --- |
+| 2025-12-31 | 24.91 | 26.27 | 61.939 |
+| 2024-12-31 | 24.13 | 24.44 | 65.238 |
+| 2023-12-31 | 24.04 | 22.91 | 69.34 |
+| 2022-12-31 | 24.67 | 20.25 | 70.562 |
+| 2021-12-31 | 21.52 | 26.28 | 69.895 |
+
+使用时需要知道几件事：
+
+- **期数**：每种报告期类型最多返回最近五期，这是上游提供的上限。
+- **报告期类型**：年报、半年报、一季报、三季报。季报和半年报是年初至报告期末的累计值，不是单季度数。
+- **单位**：报表金额的单位是万元。
+- **口径**：这是巨潮个股页的精简口径，只有主要科目。需要完整科目或附注时，让 AI 读报告原文，见[用 AI 读年报](/guides/read-annual-reports-with-ai)。
+
+几个问法：
+
+> 比亚迪最近五个年度的资产负债率、流动比率和速动比率是怎么变化的？
+
+> 列出贵州茅台和五粮液近五年的毛利率、净利润率和净资产收益率，做成对比表
+
+> 立讯精密最近五期三季报的营业总收入和归属母公司净利润是多少？
+
+## 公司与股东数据
+
+> 茅台最近几期的十大股东和股东人数有什么变化？
+
+AI 会调用 `get_company_data`，一次可以取多个数据集。例如贵州茅台 2026 年三季度末的前三大股东：
+
+| 名次 | 股东名称 | 持股比例(%) | 持股变动 |
+| --- | --- | --- | --- |
+| 1 | 中国贵州茅台酒厂(集团)有限责任公司 | 54.5 | 未变 |
+| 2 | 贵州省国有资本运营有限责任公司 | 4.56 | 未变 |
+| 3 | 香港中央结算有限公司 | 4.42 | 0.120 |
+
+一共有 15 个数据集：
+
+| 类别 | 数据集 |
+| --- | --- |
+| 公司 | 公司概况、高管与董监事、股本结构 |
+| 股东 | 十大股东、十大流通股东、股东人数、基金持股 |
+| 回报 | 历史分红 |
+| 股份变动 | 限售解禁、股权质押、股东增减持、董监高持股变动 |
+| 交易披露 | 融资融券、大宗交易、龙虎榜 |
+
+几个问法：
+
+> 宁德时代上市以来每年的分红方案是什么？
+
+> 这家公司未来一年有哪些限售股解禁？控股股东的股权质押比例高吗？
+
+> 最近三个月有哪些董监高增持或减持了公司股票？
+
+> 中芯国际最近一个月的融资融券余额和大宗交易情况
+
+## 和报告原文配合使用
+
+结构化数据适合快速对比和筛选，原文适合核实和深挖。常见的做法是先取数，发现异常再回到报告：
+
+> 先取恒瑞医药近五年的主要财务指标，如果毛利率有明显变化，再到对应年份的年报里找管理层的解释，标注页码。
+
+::: warning 数字以披露文件为准
+结构化数据可能与报告原文存在口径差异。用于正式场合的数字，请回到公司披露的报告核对。工具只负责检索和整理公开披露信息，不构成投资建议。
+:::
+
+## 范围与限制
+
+- 支持沪、深、北交所上市公司，不支持港股。
+- 不提供实时行情、K 线和估值指标。需要这些数据时，可以搭配其他数据源的 MCP 服务器，见 [A 股 MCP 服务器怎么选](/guides/a-share-mcp-servers)。
+- 一次请求多个数据集时，个别数据集失败不影响其余数据集，结果里会用 `complete: false` 标出。
+
+两个工具的完整参数和数据集名称见[工具与配置参考](/reference/tools#结构化数据)。
+
+---
+
+<!-- https://youhaozhao.github.io/cninfo-mcp/guides/prospectus -->
+
+# 招股说明书：在哪下载，怎么读
+
+招股说明书是了解一家公司最系统的一份文件：业务怎么赚钱、行业里有哪些对手、前五大客户是谁、募集的钱打算投到哪里、公司自己认为有哪些风险，都写在里面。A 股公司的招股说明书披露在巨潮资讯网上，用 cninfo-mcp 可以让 AI 助手直接找到并阅读。
+
+## 找到招股说明书
+
+> 列出中芯国际（688981）的招股书
+
+AI 会调用 `list_reports`，把报告类型设为招股书。招股书没有固定的报告年份，查询时不用说年份。上面这个问题在 2026 年 11 月返回两份文件：
+
+| 披露日期 | 标题 |
+| --- | --- |
+| 2020-07-13 | 首次公开发行股票并在科创板上市招股说明书 |
+| 2020-06-30 | 首次公开发行并在科创板上市招股意向书 |
+
+::: info 招股意向书和招股说明书
+两者内容基本一致。招股意向书在发行价格确定之前披露，不含最终的发行价格和募集资金数额；招股说明书在定价之后披露，是最终版本。想看完整信息，读招股说明书。
+:::
+
+公司可以用代码，也可以用简称；股票代码不确定时，AI 会先用 `search_securities` 查找。
+
+## 让 AI 读招股书
+
+招股书通常有几百页。和读年报一样，AI 用 `read_document` 先看目录，再按关键字定位，只读相关的章节，不需要你先把文件下载下来。
+
+**业务与商业模式**
+
+> 根据中芯国际的招股说明书，公司的主营业务和收入构成是什么？标注页码。
+
+**行业与竞争**
+
+> 招股书的“业务与技术”一节里，公司怎么描述行业竞争格局和自己的市场地位？
+
+**客户和供应商**
+
+> 报告期内前五大客户和前五大供应商分别是谁，各占多少？
+
+**募集资金用途**
+
+> 这次发行计划募集多少资金？分别投向哪些项目？
+
+**风险因素**
+
+> 招股书的“风险因素”一节列了哪些风险？按重要程度归纳，并标注页码。
+
+**和上市后的表现对照**
+
+> 把招股书里的募投项目，和公司最新年报里披露的募集资金使用情况对照一下，进度如何？
+
+最后这个问题会同时用到招股书和年报，AI 会分别查找并阅读两份文件。读年报的方法见[用 AI 读年报](/guides/read-annual-reports-with-ai)。
+
+## 下载招股书
+
+想把文件留在本地：
+
+> 下载 688981 的招股书
+
+PDF 会保存到下载目录（默认 `~/Downloads/cninfo-mcp`），文件名带代码、简称、标题和公告 ID。更多细节见[年报下载](/guides/download-annual-reports)。
+
+## 范围与限制
+
+- 招股书清单支持沪、深、北交所的上市公司，包括主板、创业板和科创板。
+- 上市时间很早的公司，招股书可能是扫描件，没有文本层，可以下载但读不出正文。
+- 增发、配股、可转债等再融资的募集说明书不在招股书清单里，可以用公告检索按分类或标题关键字查找，见[上市公司公告查询](/guides/search-announcements)。
+- 招股书披露的是上市当时的情况。了解公司现状，请结合最新的定期报告和公告。
+
+参数说明见[工具与配置参考](/reference/tools#list-reports)。
+
+---
+
+<!-- https://youhaozhao.github.io/cninfo-mcp/guides/read-annual-reports-with-ai -->
+
+# 用 AI 读年报：带页码的答案怎么来
+
+一份年报动辄一两百页。把整份 PDF 交给 AI，既占上下文，又很难核对它说的每句话出自哪里。cninfo-mcp 的做法是让 AI 像人一样读报告：先看目录，再定位章节，只读相关的几页，并在回答里标出页码。
+
+本文以贵州茅台 2025 年年度报告为例，输出节选自 2026 年 11 月的实际查询结果。
+
+## 你只需要这样问
+
+> 贵州茅台 2025 年年报里，管理层怎么看明年的行业趋势？请标注页码。
+
+AI 助手会自己完成下面几步：用 `list_reports` 找到这份年报，用 `read_document` 看目录并定位到相关章节，读取那几页，然后作答。你不需要先下载 PDF，也不需要告诉它用哪个工具。
+
+## 三步读法
+
+`read_document` 有三种用法，正好对应读一份长报告的三个步骤。
+
+### 1. 概览：页数和目录
+
+只给文档地址时，返回页数、字数、目录和开头几页。下面是这份年报的目录节选：
+
+```txt
+PDF · 143 pages · 155700 characters
+Contents:
+第一节释义 (p.5)
+第二节公司简介和主要财务指标 (p.5)
+  七、近三年主要会计数据和财务指标 (p.6)
+  九、2025年分季度主要财务数据 (p.7)
+第三节管理层讨论与分析 (p.8)
+  二、报告期内公司所处行业情况 (p.8)
+  五、报告期内主要经营情况 (p.9)
+  六、公司关于公司未来发展的讨论与分析 (p.21)
+第四节公司治理、环境和社会 (p.23)
+……
+```
+
+十五万字的报告，AI 先拿到的只是一张带页码的地图。
+
+### 2. 定位：在文档内按关键字查找
+
+给出 `query`（多个词用空格分隔，任一命中即可），返回命中的页码和上下文片段：
+
+```txt
+"行业格局 发展趋势" found on 2 page(s)
+
+[p.8] 1 match(es)
+[p.21] 2 match(es)
+```
+
+第 8 页只是一句指向后文的引用，第 21 页才是“行业格局和趋势”一节的正文。AI 看到片段后会自己判断该读哪一页。
+
+### 3. 精读：按页读取
+
+给出 `pages`（如 `21-23`），返回这些页的全文。内容超出长度上限时，结果末尾会给出继续读取用的页码，AI 可以接着往下读。
+
+读过的文档会缓存在本机，后两步不需要重新下载和解析。
+
+## 提问模板
+
+把公司和年份换成你关心的即可。句子里带上“标注页码”，核对起来会方便很多。
+
+**管理层讨论**
+
+> 宁德时代 2025 年年报的“管理层讨论与分析”里，公司怎么解释毛利率的变化？引用原文并标注页码。
+
+**收入拆分**
+
+> 按产品和地区拆分比亚迪 2025 年的营业收入和毛利率，数据取自年报的主营业务分析，标注页码。
+
+**风险因素**
+
+> 中芯国际最新年报披露了哪些主要风险？和上一年年报相比，有哪些新增或删去的内容？
+
+**研发投入**
+
+> 恒瑞医药近三年年报里的研发投入金额、占营业收入的比例和资本化比例分别是多少？
+
+**客户与供应商集中度**
+
+> 立讯精密 2025 年年报里，前五大客户和前五大供应商各占多少？
+
+**跨年对比**
+
+> 对比贵州茅台 2024 年和 2025 年年报里“公司发展战略”一节的表述，有哪些变化？
+
+## 内置的研究模板
+
+服务器自带两个提示词模板，把常用的研究流程写成了固定步骤：
+
+| 模板 | 用途 |
+| --- | --- |
+| `company_research` | 上市公司深度研究：公司概况、股东、近五年财务、最新年报的关键章节和近六个月的重要公告 |
+| `earnings_review` | 最新财报解读：关键数据同比变化、驱动因素、利润质量和管理层展望 |
+
+在支持 MCP 提示词的客户端里可以直接调用，例如在 Claude Code 中输入 `/mcp__cninfo__company_research`。
+
+## 让答案经得起核对
+
+- **要求页码**。AI 是按页读取的，每个结论都可以对应到具体页码，回到 PDF 一查便知。
+- **关键数字回到原文**。`get_financials` 返回的是巨潮个股页的精简口径，可能与报告原文存在口径差异，重要数字以报告为准。
+- **留意不完整的结果**。结果里的 `complete` 为 `false` 时，说明有一部分内容没取到，这时的结论不能当作全貌。
+- **扫描件读不了**。部分早期公告没有文本层，无法读出正文。
+
+## 不只是年报
+
+同样的读法适用于半年报、季报、招股说明书和任何一份公告：
+
+- 半年报和季报：在问题里说明报告类型，例如“2026 年半年报”“三季报”。
+- 招股说明书：见[招股说明书：在哪下载，怎么读](/guides/prospectus)。
+- 临时公告和调研记录：见[上市公司公告查询](/guides/search-announcements)。
+
+想把文件留在本地，见[年报下载](/guides/download-annual-reports)。`read_document` 的完整参数见[工具与配置参考](/reference/tools#read-document)。
+
+---
+
+<!-- https://youhaozhao.github.io/cninfo-mcp/guides/search-announcements -->
+
+# 上市公司公告查询：业绩预告、回购与调研记录
+
+想知道一家公司最近发了什么公告，或者过去一个月全市场有哪些公司发布了业绩预告，都可以直接问 AI 助手。cninfo-mcp 的 `search_announcements` 工具在巨潮资讯网上检索公告，默认按披露时间从新到旧返回。
+
+下面的示例结果来自 2026 年 11 月的实际查询。
+
+## 查一家公司的公告
+
+> 宁德时代今年有哪些回购相关的公告？
+
+AI 会用公司名和标题关键字“回购”检索，得到 12 条结果，最新的几条是：
+
+| 披露日期 | 标题 |
+| --- | --- |
+| 2026-11-02 | 关于回购公司A股股份的进展公告 |
+| 2026-10-08 | 关于回购公司A股股份的进展公告 |
+| 2026-09-11 | 关于首次回购公司A股股份的公告 |
+
+每条结果都带有 PDF 地址，可以接着让 AI 读正文：
+
+> 读一下首次回购那份公告，回购了多少股、均价是多少？
+
+一次也可以查多家公司（最多 10 家）：
+
+> 贵州茅台和五粮液今年的权益分派公告有哪些？
+
+## 全市场检索：谁发了业绩预告
+
+不指定公司，就是在全市场范围内检索，可以按公告分类、板块和日期筛选。
+
+> 过去一个月创业板有哪些公司发布了业绩预告？
+
+这个问题对应的条件是：分类“业绩预告”，板块“创业板”，日期 2026-10-16 至 2026-11-16。查询返回 6 条公告，例如长川科技、航天智造、申昊科技的前三季度业绩预告。
+
+可以筛选的板块有：
+
+| 板块 | 取值 | 板块 | 取值 |
+| --- | --- | --- | --- |
+| 沪市全部 | `sh` | 深市全部 | `sz` |
+| 沪主板 | `shmb` | 深主板 | `szmb` |
+| 科创板 | `shkcp` | 创业板 | `szcy` |
+| 北交所 | `bj` | | |
+
+再举几个全市场检索的问法：
+
+> 本周科创板有哪些公司发布了风险提示公告？
+
+> 上个月北交所有哪些公司披露了股权激励相关的公告？
+
+> 11 月以来沪主板有哪些公司发布了可转债公告？
+
+## 公告分类
+
+公告分类一共 26 个，覆盖定期报告、业绩预告、权益分派、董事会和股东会、股权激励、增发配股、可转债、股权变动、补充更正、澄清致歉、风险提示、退市等。提问时用中文说法就可以，AI 会换成对应的分类。常用的几个：
+
+| 想找的内容 | 分类 |
+| --- | --- |
+| 业绩预告、业绩快报 | 业绩预告 |
+| 分红派息、送转 | 权益分派 |
+| 股东增减持、权益变动 | 股权变动 |
+| 定增 | 增发 |
+| 股票交易异常波动、风险提示 | 风险提示 |
+| 年报或季报的更正 | 补充更正 |
+
+完整的分类表见[工具与配置参考](/reference/tools#search-announcements)。
+
+::: info 分类和关键字的区别
+分类是巨潮资讯网给公告打的标签，关键字匹配的是公告标题。回购这类没有单独分类的主题，用标题关键字来找。分类只适用于沪、深、北交所的公告，港股公告请用关键字检索。
+:::
+
+## 调研记录：投资者关系活动记录表
+
+机构调研纪要披露在“投资者关系活动记录表”里，在巨潮资讯网上属于另一个栏目，同样可以检索。
+
+> 宁德时代最近几次机构调研都聊了什么？
+
+AI 会把检索范围切换到投资者关系栏目，找到 37 条记录，最近的三份是 2026 年 10 月 20 日、7 月 24 日和 4 月 15 日的活动记录表，然后读取正文并归纳。
+
+这个栏目下有四类记录：调研活动、路演活动、媒体采访和管理制度。
+
+## 日期、排序和翻页
+
+- **日期**：起止日期都包含在内，按北京时间计算。问题里说“过去一个月”“今年以来”，AI 会换算成具体日期。
+- **排序**：默认从新到旧，也可以要求从旧到新。
+- **数量**：一次默认返回 30 条，最多 200 条。结果里带有命中总数，还有更多时 AI 可以继续翻页。
+
+## 检索范围与限制
+
+- 覆盖沪、深、北交所上市公司（含 B 股）的公告和港股公告；基金、债券可以按代码检索公告。
+- 公告按**标题**关键字检索，不支持跨公告的全文检索。要在一份公告的正文里找内容，让 AI 读取这份文档并在文档内按关键字定位。
+- 结果里的 `complete` 为 `false` 时，说明部分分页没有取到，此时的清单并不完整。
+
+## 接下来
+
+- 读公告和报告的正文：[用 AI 读年报](/guides/read-annual-reports-with-ai)
+- 把公告保存到本地：让 AI 按地址下载（`download_documents`），保存位置见[年报下载](/guides/download-annual-reports)
+- 全部参数：[工具与配置参考](/reference/tools#search-announcements)
+
+---
+
+<!-- https://youhaozhao.github.io/cninfo-mcp/en/reference/tools -->
+
+# Tools and configuration reference
+
+This page is an English rendering of the [Chinese reference](/reference/tools), which is generated from the repository and is always current. It was last checked against version 3.0.0.
+
+Every `stock` argument accepts a code or a Chinese short name: `600519`, `000001.SZ`, `sh600519`, `920185` (Beijing Stock Exchange, old and new codes both work), `00700.HK`, `贵州茅台`.
+
+## Find and search
+
+### `search_securities`
+
+Find securities by code, short name or pinyin initials. Covers A and B shares in Shanghai, Shenzhen and Beijing, and Hong Kong stocks; funds and bonds are found by exact code.
+
+- `query` (required): a code, part of a name, or pinyin initials, such as `茅台`, `gzmt`, `6005`
+- `limit` (optional): number of results, default 10
+
+### `list_reports`
+
+List a company's periodic reports or prospectuses.
+
+- `stock` (required)
+- `report_type` (optional): report type, default `annual`
+- `year` (optional): fiscal year of the report; for prospectuses, the disclosure year. Omit it for all years
+- `include_variants` (optional): also return summaries, English versions and other variants, default `false`
+
+Values of `report_type`:
+
+| Value | Report |
+| --- | --- |
+| `annual` | Annual report |
+| `semiannual` | Semi-annual (interim) report |
+| `q1` | First-quarter report |
+| `q3` | Third-quarter report |
+| `prospectus` | IPO prospectus, including the preliminary prospectus |
+
+Each result has a `kind`:
+
+| `kind` | Meaning | Returned by default |
+| --- | --- | --- |
+| `main` | Full report | Yes |
+| `revised` | Updated or revised full report | Yes |
+| `summary` | Summary (including the short-form quarterly text used in Shenzhen) | No |
+| `english` | English version | No |
+| `h_share` | Edition prepared under Hong Kong rules by a dual-listed company | No |
+| `other` | Cancelled and other cases | No |
+
+Announcements about a report, such as a correction notice, are not reports and do not appear in the results.
+
+### `search_announcements`
+
+Search announcements, newest first by default.
+
+- `stock` (optional): code or short name; several may be comma-separated (up to 10). Omit it to search the whole market
+- `keyword` (optional): words that must appear in the title, such as `回购` (share repurchase)
+- `categories` (optional): announcement categories, see the table below
+- `start_date` / `end_date` (optional): `YYYY-MM-DD`, Beijing time, inclusive
+- `market` (optional): board filter for market-wide searches. `sh` Shanghai, `shmb` Shanghai main board, `shkcp` STAR Market, `sz` Shenzhen, `szmb` Shenzhen main board, `szcy` ChiNext, `bj` Beijing Stock Exchange
+- `source` (optional): `announcements` (default) or `investor_relations` (records of investor meetings and site visits)
+- `sort` (optional): `newest` (default) or `oldest`
+- `limit` (optional): default 30, maximum 200
+- `offset` (optional): position to continue from
+
+The result includes `total` (the number of matches). When there are more results it also includes `next_offset`, which is passed as `offset` in the next call.
+
+Announcement categories:
+
+| Name | Category | Name | Category |
+| --- | --- | --- | --- |
+| `annual_report` | Annual reports | `equity_incentive` | Equity incentives |
+| `semiannual_report` | Semi-annual reports | `rights_issue` | Rights issues |
+| `q1_report` | Q1 reports | `unlock` | Lock-up expiries |
+| `q3_report` | Q3 reports | `corporate_bond` | Corporate bonds |
+| `earnings_forecast` | Earnings forecasts | `convertible_bond` | Convertible bonds |
+| `dividend` | Dividends and distributions | `other_financing` | Other financing |
+| `board` | Board of directors | `equity_change` | Changes in shareholding |
+| `supervisory_board` | Supervisory board | `correction` | Supplements and corrections |
+| `shareholder_meeting` | Shareholder meetings | `clarification` | Clarifications and apologies |
+| `operations` | Day-to-day operations | `risk_warning` | Risk warnings |
+| `governance` | Corporate governance | `st_delisting` | Special treatment and delisting |
+| `intermediary` | Intermediary reports | `delisting_period` | Delisting consolidation period |
+| `ipo` | Initial public offerings | `placement` | Follow-on offerings |
+
+Categories with `source=investor_relations`: `research` (site visits and research meetings), `roadshow`, `media_interview`, `ir_policy` (investor-relations policies).
+
+Categories apply to Shanghai, Shenzhen and Beijing listings only. For Hong Kong announcements, search by `keyword`.
+
+## Read
+
+### `read_document`
+
+Read the text of an announcement or report (PDF, or HTML for older filings). The result is plain text.
+
+- `url` (required): a document URL returned by `list_reports` or `search_announcements`
+- `pages` (optional): page ranges, such as `5`, `10-20`, `1-3,8`
+- `query` (optional): words to locate inside the document, space-separated; any match counts
+- `max_chars` (optional): output limit in characters, default 20000
+
+Three modes:
+
+1. `url` only: page count, table of contents and the opening pages.
+2. With `query`: the matching pages with snippets, to locate a section in a long report.
+3. With `pages`: the full text of those pages. If it exceeds `max_chars`, the result ends with the `pages` value to continue from.
+
+## Structured data
+
+Shanghai, Shenzhen and Beijing listings only.
+
+### `get_financials`
+
+- `stock` (required)
+- `statements` (optional): `indicators` (key ratios), `income`, `balance`, `cashflow`; several may be requested, default `indicators`
+- `period` (optional): `annual` (default), `semiannual`, `q1`, `q3`. Quarterly and semi-annual figures are cumulative year-to-date
+- `periods` (optional): number of recent periods, default 5 (the upstream source provides at most 5)
+
+Statement amounts are in units of 10,000 CNY (万元) and are the condensed figures from CNINFO's company pages (main line items). For complete line items, read the report itself with `read_document`.
+
+### `get_company_data`
+
+- `stock` (required)
+- `datasets` (required): one or more datasets (up to 8), fetched concurrently
+- `limit` (optional): rows per dataset, default 20
+
+| Dataset | Content | Dataset | Content |
+| --- | --- | --- | --- |
+| `profile` | Company profile | `unlocks` | Lock-up expiries |
+| `executives` | Directors, supervisors and executives | `pledges` | Share pledges |
+| `dividends` | Dividend history | `margin_trading` | Margin trading |
+| `share_structure` | Share capital structure | `block_trades` | Block trades |
+| `shareholder_count` | Number of shareholders | `shareholder_trades` | Shareholder purchases and sales |
+| `top_shareholders` | Top ten shareholders | `executive_trades` | Changes in holdings of directors and executives |
+| `top_float_shareholders` | Top ten holders of tradable shares | `dragon_tiger` | Exchange trading-disclosure list (龙虎榜) |
+| `fund_holdings` | Fund holdings | | |
+
+## Download
+
+### `download_reports`
+
+Save periodic reports or prospectuses as PDF files in the download directory. The selection is the same as `list_reports` (full reports only).
+
+- `stock` (required)
+- `report_type` (optional): default `annual`
+- `year` (optional): omit to download every year
+- `save_path` (optional): a sub-directory inside the download root, such as `annual/2024`. Paths outside the root are rejected
+
+### `download_documents`
+
+- `urls` (required): a list of document URLs (up to 50)
+- `save_path` (optional): as above
+
+Files are named `code_name_title_announcementID.pdf`. A file that already exists is not downloaded again. Each file is handled independently, and failures are listed one by one in `failures`.
+
+## Prompt templates
+
+- `company_research`: an in-depth research brief on a listed company
+- `earnings_review`: a review of the latest periodic report
+
+## Partial results
+
+Results that involve several upstream requests carry a `complete` field. If some pages, datasets or files fail, what was retrieved is still returned, `complete` is `false`, and `warnings` or `errors` describe what is missing.
+
+## Configuration {#configuration}
+
+All settings are environment variables, and all are optional.
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `CNINFO_MCP_DOWNLOAD_DIR` | Download root. The download tools can only write inside it | `~/Downloads/cninfo-mcp` |
+| `CNINFO_MCP_CACHE_DIR` | Cache for the securities list and for documents that were read, with their text | `cninfo-mcp` in the platform cache directory |
+| `CNINFO_MCP_CACHE_MAX_MB` | Document cache limit; least recently used files are evicted beyond it | `1024` |
+| `CNINFO_MCP_CONCURRENCY` | Simultaneous requests to CNINFO (1 to 8) | `4` |
+| `CNINFO_MCP_TIMEOUT_MS` | Timeout of a single request, in milliseconds | `30000` |
+| `CNINFO_MCP_DEBUG` | Set to `1` to log upstream requests, retries and throttling to stderr | unset |
+
+Command line:
+
+```bash
+npx -y @youhaozhao/cninfo-mcp            # start the MCP server (stdio)
+npx -y @youhaozhao/cninfo-mcp probe      # online self-test: announcement query, financial data, document reading
+npx -y @youhaozhao/cninfo-mcp selftest   # offline self-test: is the installation itself (PDF text extraction) working
+```
+
+## Coverage and limits
+
+- Announcement search: companies listed in Shanghai, Shenzhen and Beijing (including B shares) and Hong Kong announcements; announcements of funds and bonds can be searched by code.
+- `list_reports`, `get_financials`, `get_company_data`: Shanghai, Shenzhen and Beijing listings.
+- Announcements are searched by title keyword. There is no full-text search across announcements; inside a single document, keywords can be located with `query`.
+- Scanned documents (some older filings) have no text layer and cannot be read as text.
+- No real-time quotes or price history.
+
+---
+
+<!-- https://youhaozhao.github.io/cninfo-mcp/reference/tools -->
+
+# 工具与配置参考
+
+所有 `stock` 参数都接受代码或简称：`600519`、`000001.SZ`、`sh600519`、`920185`（北交所新旧代码均可）、`00700.HK`、`贵州茅台`。
+
+## 查找与检索
+
+### `search_securities`
+
+按代码、简称或拼音首字母查找证券。覆盖沪、深、北交所的 A 股和 B 股以及港股；基金和债券可按完整代码查到。
+
+- `query`（必填）：代码、简称片段或拼音首字母，如 `茅台`、`gzmt`、`6005`
+- `limit`（可选）：返回条数，默认 10
+
+### `list_reports`
+
+列出一家公司的定期报告或招股书。
+
+- `stock`（必填）
+- `report_type`（可选）：报告类型，默认 `annual`
+- `year`（可选）：报告期年份；招股书按披露年份。省略则返回全部年份
+- `include_variants`（可选）：是否同时返回摘要、英文版等变体，默认 `false`
+
+`report_type` 的取值（中文别名如“年报”“半年报”也可以）：
+
+| 取值 | 报告 |
+| --- | --- |
+| `annual` | 年度报告 |
+| `semiannual` | 半年度报告（中报） |
+| `q1` | 第一季度报告 |
+| `q3` | 第三季度报告 |
+| `prospectus` | 招股说明书 / 招股意向书 |
+
+每条结果带 `kind` 字段：
+
+| `kind` | 含义 | 默认返回 |
+| --- | --- | --- |
+| `main` | 报告全文 | 是 |
+| `revised` | 更新后 / 修订后的全文 | 是 |
+| `summary` | 摘要（含深市季报的“正文”简版） | 否 |
+| `english` | 英文版 | 否 |
+| `h_share` | 两地上市公司按港股规则编制的版本 | 否 |
+| `other` | 已取消等其他情况 | 否 |
+
+“关于年报的更正公告”这类并非报告本身的公告不会出现在结果里。
+
+### `search_announcements`
+
+检索公告，默认按披露时间从新到旧。
+
+- `stock`（可选）：代码或简称，多个用逗号分隔（最多 10 个）。省略即全市场检索
+- `keyword`（可选）：标题关键字，如 `回购`
+- `categories`（可选）：公告分类，见下表，中英文名均可
+- `start_date` / `end_date`（可选）：`YYYY-MM-DD`，北京时间，含首尾
+- `market`（可选）：全市场检索时的板块筛选——`sh` 沪市、`shmb` 沪主板、`shkcp` 科创板、`sz` 深市、`szmb` 深主板、`szcy` 创业板、`bj` 北交所
+- `source`（可选）：`announcements`（默认）或 `investor_relations`（调研 / 投资者关系活动记录）
+- `sort`（可选）：`newest`（默认）或 `oldest`
+- `limit`（可选）：默认 30，最大 200
+- `offset`（可选）：翻页位置
+
+返回 `total`（命中总数）；还有更多结果时带 `next_offset`，把它作为下一次调用的 `offset`。
+
+公告分类：
+
+| 名称 | 分类 | 名称 | 分类 |
+| --- | --- | --- | --- |
+| `annual_report` | 年报 | `equity_incentive` | 股权激励 |
+| `semiannual_report` | 半年报 | `rights_issue` | 配股 |
+| `q1_report` | 一季报 | `unlock` | 解禁 |
+| `q3_report` | 三季报 | `corporate_bond` | 公司债 |
+| `earnings_forecast` | 业绩预告 | `convertible_bond` | 可转债 |
+| `dividend` | 权益分派 | `other_financing` | 其他融资 |
+| `board` | 董事会 | `equity_change` | 股权变动 |
+| `supervisory_board` | 监事会 | `correction` | 补充更正 |
+| `shareholder_meeting` | 股东会 | `clarification` | 澄清致歉 |
+| `operations` | 日常经营 | `risk_warning` | 风险提示 |
+| `governance` | 公司治理 | `st_delisting` | 特别处理和退市 |
+| `intermediary` | 中介报告 | `delisting_period` | 退市整理期 |
+| `ipo` | 首发 | `placement` | 增发 |
+
+`source=investor_relations` 时的分类：`research` 调研活动、`roadshow` 路演活动、`media_interview` 媒体采访、`ir_policy` 管理制度。
+
+分类只适用于沪、深、北交所；港股公告请用 `keyword` 检索。
+
+## 阅读
+
+### `read_document`
+
+阅读公告或报告正文（PDF；早期公告为 HTML）。结果是纯文本。
+
+- `url`（必填）：`list_reports` 或 `search_announcements` 返回的文档地址
+- `pages`（可选）：页码范围，如 `5`、`10-20`、`1-3,8`
+- `query`（可选）：要在文档内定位的关键字，空格分隔，任一命中即可
+- `max_chars`（可选）：输出字数上限，默认 20000
+
+三种用法：
+
+1. 只给 `url`：返回页数、目录和开头几页。
+2. 给 `query`：返回命中的页码和上下文片段，用来在长报告里定位章节。
+3. 给 `pages`：返回这些页的全文。超出 `max_chars` 时，结果末尾会给出继续读取用的 `pages` 值。
+
+## 结构化数据
+
+仅支持沪、深、北交所上市公司。
+
+### `get_financials`
+
+- `stock`（必填）
+- `statements`（可选）：`indicators` 主要指标、`income` 利润表、`balance` 资产负债表、`cashflow` 现金流量表，可多选，默认 `indicators`
+- `period`（可选）：`annual`（默认）、`semiannual`、`q1`、`q3`；季报和半年报为年初至报告期末的累计值
+- `periods`（可选）：返回最近几期，默认 5（上游最多提供 5 期）
+
+报表金额单位为万元，是巨潮个股页的精简口径（主要科目）；需要完整科目请用 `read_document` 读报告原文。
+
+### `get_company_data`
+
+- `stock`（必填）
+- `datasets`（必填）：一次可取多个数据集（最多 8 个），并发获取
+- `limit`（可选）：每个数据集返回的行数，默认 20
+
+| 数据集 | 内容 | 数据集 | 内容 |
+| --- | --- | --- | --- |
+| `profile` | 公司概况 | `unlocks` | 限售解禁 |
+| `executives` | 高管与董监事 | `pledges` | 股权质押 |
+| `dividends` | 历史分红 | `margin_trading` | 融资融券 |
+| `share_structure` | 股本结构 | `block_trades` | 大宗交易 |
+| `shareholder_count` | 股东人数 | `shareholder_trades` | 股东增减持 |
+| `top_shareholders` | 十大股东 | `executive_trades` | 董监高持股变动 |
+| `top_float_shareholders` | 十大流通股东 | `dragon_tiger` | 龙虎榜 |
+| `fund_holdings` | 基金持股 | | |
+
+## 下载
+
+### `download_reports`
+
+把定期报告或招股书的 PDF 保存到下载目录，选取规则与 `list_reports` 相同（只下载报告全文）。
+
+- `stock`（必填）
+- `report_type`（可选）：默认 `annual`
+- `year`（可选）：省略则下载全部年份
+- `save_path`（可选）：下载根目录下的子目录，如 `annual/2024`；根目录之外的路径会被拒绝
+
+### `download_documents`
+
+- `urls`（必填）：文档地址列表（最多 50 个）
+- `save_path`（可选）：同上
+
+文件名为 `代码_简称_标题_公告ID.pdf`。目标文件已存在时不会重新下载；每个文件独立处理，失败的在 `failures` 里逐条列出。
+
+## 提示词模板
+
+- `company_research`：上市公司深度研究
+- `earnings_review`：最新财报解读
+
+## 结果完整性
+
+涉及多次上游请求的结果都带 `complete` 字段。部分分页、部分数据集或部分文件失败时，已取得的内容照常返回，同时 `complete` 为 `false` 并附带 `warnings` / `errors`。
+
+## 配置
+
+全部通过环境变量设置，都可以省略：
+
+| 环境变量 | 说明 | 默认值 |
+| --- | --- | --- |
+| `CNINFO_MCP_DOWNLOAD_DIR` | 下载根目录，下载工具只能写入这个目录 | `~/Downloads/cninfo-mcp` |
+| `CNINFO_MCP_CACHE_DIR` | 证券列表、已读取文档及其文本的缓存目录 | 系统缓存目录下的 `cninfo-mcp` |
+| `CNINFO_MCP_CACHE_MAX_MB` | 文档缓存上限，超出后淘汰最久未使用的文件 | `1024` |
+| `CNINFO_MCP_CONCURRENCY` | 同时向巨潮发起的请求数（1–8） | `4` |
+| `CNINFO_MCP_TIMEOUT_MS` | 单次请求超时（毫秒） | `30000` |
+| `CNINFO_MCP_DEBUG` | 设为 `1` 时在 stderr 打印上游请求、重试与限流 | 未设置 |
+
+命令行：
+
+```bash
+npx -y @youhaozhao/cninfo-mcp            # 启动 MCP 服务器（stdio）
+npx -y @youhaozhao/cninfo-mcp probe      # 联网自检：公告查询、财务数据、文档读取
+npx -y @youhaozhao/cninfo-mcp selftest   # 离线自检：安装本身（PDF 文本提取）是否可用
+```
+
+## 数据范围与限制
+
+- 公告检索：沪、深、北交所上市公司（含 B 股），以及港股公告；基金、债券可按代码检索公告。
+- `list_reports`、`get_financials`、`get_company_data`：沪、深、北交所上市公司。
+- 公告按标题关键字检索，不支持跨公告的全文检索；读取单个文档时可以在文档内按关键字定位。
+- 扫描件（部分早期公告）没有文本层，无法读出正文。
+- 不提供实时行情和 K 线。
+
+---
+
+<!-- https://youhaozhao.github.io/cninfo-mcp/reference/ -->
+
+# 参考文档
+
+这些页面同步自 [cninfo-mcp 仓库](https://github.com/youhaozhao/cninfo-mcp)的 `docs/` 目录，对应当前发布的 v3.0.0。
+
+- [工具与配置参考](/reference/tools)：cninfo-mcp 全部 8 个 MCP 工具的参数说明：证券查找、定期报告与招股书、公告检索、文档阅读、财务与股东数据、PDF 下载，以及公告分类、数据集和环境变量配置。
+- [性能与稳定性](/reference/reliability)：cninfo-mcp 如何应对巨潮资讯网的限流：全局限速、403 冷却重试、证券目录与文档缓存，以及用 complete 字段标明结果是否完整。
+- [安全边界](/reference/security)：cninfo-mcp 的安全设计：只访问巨潮资讯网的两个 HTTPS 主机，只在下载目录内写文件，不读取任何凭据，并为每个工具声明只读或写入注解。
+- [升级指南](/reference/upgrading)：从 cninfo-mcp 2.x 及更早版本升级到 3.0：不再需要 Python，工具改名并扩充到 8 个，下载文件名和并发控制方式的变化。
+- [开发与测试](/reference/development)：在本地运行 cninfo-mcp 的单元测试、类型检查、联网冒烟测试和打包构建，以及源码结构说明。
+
+想按任务上手，请看[使用指南](/guides/)。
+
+---
+
+<!-- https://youhaozhao.github.io/cninfo-mcp/reference/development -->
+
+# 开发与测试
+
+需要 Node.js 22.18+（开发时用 Node 自带的类型擦除直接运行 `.ts`）。
+
+```bash
+npm install
+npm test            # 离线单元测试（假 fetch，不联网）
+npm run typecheck
+npm run test:live   # 真实访问巨潮的端到端冒烟测试
+npm run dev         # 直接从 TypeScript 源码启动服务器
+npm run build       # 打包到 dist/
+```
+
+## 源码结构
+
+| 文件 | 职责 |
+| --- | --- |
+| `src/http.ts` | 主机白名单、限速、超时与重试 |
+| `src/securities.ts` | 证券目录：代码 / 简称 → orgId |
+| `src/announcements.ts` | 公告查询与翻页 |
+| `src/reports.ts` | 报告标题分类 |
+| `src/companyData.ts` | 财务与公司结构化数据 |
+| `src/documents.ts` | 文档抓取、PDF 文本提取、下载 |
+| `src/paths.ts` | 下载目录边界 |
+| `src/server.ts` | MCP 工具与提示词 |
+| `src/cli.ts` | 命令行入口（`probe`、`selftest`） |
+
+## 构建与发布
+
+`npm run build` 运行 `scripts/build.mjs`，用 esbuild 把源码和全部依赖打成自包含的 `dist/`：
+
+- 依赖都在 `devDependencies` 里，发布包不声明运行时依赖。
+- pdf.js 单独成块，首次读取 PDF 时才加载；它需要的 `cmaps` 和 `standard_fonts` 复制到 `dist/pdfjs/`。
+- 被打包的第三方软件及其许可证写入 `dist/THIRD-PARTY-LICENSES.txt`。
+
+`npm pack` / `npm publish` 会通过 `prepack` 自动构建。发布前可以在一个空目录里安装 tarball 并运行 `cninfo-mcp selftest`（离线）和 `cninfo-mcp probe`（联网）确认产物可用；CI 会在 Linux、Windows、macOS 上做前一项检查。
+
+---
+
+<!-- https://youhaozhao.github.io/cninfo-mcp/reference/reliability -->
+
+# 性能与稳定性
+
+## 查询
+
+- **按 orgId 精确查询**：先用本地缓存的证券目录把代码解析成巨潮的 orgId，一条请求链即可查到一家公司在沪、深、北任一市场的公告，不必逐个交易所扫描后再过滤。同一发行人的多个代码（A+B 股、北交所新旧代码）会一并查询。
+- **并发翻页**：上游每页最多 30 条。第一页返回总数后，其余分页并发抓取。
+
+## 限速与重试
+
+- **全局限速**：所有上游请求共用一个并发上限（默认 4）和最小发起间隔，多个工具调用同时进行时也不会叠加。
+- **限流冷却**：巨潮用 403 表达限流。遇到 403 / 429 时全局暂停一段时间再重试，而不是继续撞限流。
+- **自动重试**：超时、网络错误、5xx、空响应、数据接口的内部失败（HTTP 200 但 `resultMsg=fail`）按指数退避加抖动重试；404 等确定性错误立即返回。
+
+并发上限不建议调高：短时间内大量请求会让巨潮返回 403 并暂时封禁 IP。
+
+## 缓存
+
+- **证券目录**：内存和磁盘各一份，12 小时更新一次；上游不可用时退回磁盘上的旧副本。
+- **查询结果**：短时缓存，并合并同时发起的相同请求。不完整的结果不进缓存。
+- **文档**：读过的文档及其逐页文本落盘缓存，再次读取或下载不需要重新抓取和解析。缓存超过上限时淘汰最久未使用的文件。
+
+## 结果完整性与故障隔离
+
+- 部分分页、部分数据集或部分文件失败时，已取得的内容照常返回，并用 `complete: false` 明确标出，不会把残缺结果当作完整结果。
+- 单个文件下载失败、单个数据集失败、单页 PDF 解析失败都不会拖垮整次调用。
+- 下载和缓存都是先写临时文件再原子改名；限流时返回的 HTML 错误页不会被当作 PDF 保存。
+- 客户端退出后服务器随即结束，不留下孤儿进程。
+
+## 监控
+
+仓库的定时工作流每天运行一次 `cninfo-mcp probe`，实际探测沪、深、北交所的年报查询、财务数据接口和文档读取，异常时自动开 issue。
+
+---
+
+<!-- https://youhaozhao.github.io/cninfo-mcp/reference/security -->
+
+# 安全边界
+
+- **网络**：只访问 `https://www.cninfo.com.cn`（查询与数据）和 `https://static.cninfo.com.cn`（文档），全程 HTTPS。重定向逐跳校验，不会被带到其他主机。
+- **文件**：只有两个下载工具会写用户可见的文件，并且只写入下载根目录（`CNINFO_MCP_DOWNLOAD_DIR`，默认 `~/Downloads/cninfo-mcp`）。根目录由部署方在客户端配置里指定，工具调用方无法更改。除此之外，服务器只写自己的缓存目录（`CNINFO_MCP_CACHE_DIR`）。
+- **写入确认**：服务器自身不弹确认框。下载工具声明了 `readOnlyHint: false`，是否在调用前向用户确认由 MCP 客户端决定。
+- **安装**：`npm install` 阶段不运行任何脚本；服务器启动时不安装任何东西。
+- **凭据**：不需要、也不读取任何账号、Cookie 或密钥。
+- **文档内容**：公告和报告是上市公司披露的外部内容，助手应当把它们当作资料而不是指令。
+
+## 文档地址
+
+`read_document` 和 `download_documents` 只接受 `https://static.cninfo.com.cn` 上的地址（或其 `finalpage/...` 相对路径），其他主机、非 HTTPS、带账号信息或非默认端口的地址都会被拒绝。
+
+## 保存路径
+
+`download_reports` 和 `download_documents` 的 `save_path` 只能是下载根目录内的位置：相对路径（如 `annual/2024`）按根目录下的子目录解析，落在根目录之外的路径（包括 `..` 和指向外部的符号链接）会被拒绝，不会写入任何文件。
+
+## MCP 工具注解
+
+| 工具 | `readOnlyHint` | `destructiveHint` | `idempotentHint` | `openWorldHint` |
+| --- | --- | --- | --- | --- |
+| `search_securities`、`list_reports`、`search_announcements`、`read_document`、`get_financials`、`get_company_data` | `true` | `false` | `true` | `true` |
+| `download_reports`、`download_documents` | `false` | `false` | `true` | `true` |
+
+## 依赖
+
+发布包是自包含的：构建时用 esbuild 把源码和依赖（MCP SDK、zod、pdf.js 等）打进 `dist/`，安装时不会再拉取任何其他包。被打包的第三方软件及其许可证列在包内的 `dist/THIRD-PARTY-LICENSES.txt`。
+
+---
+
+<!-- https://youhaozhao.github.io/cninfo-mcp/reference/upgrading -->
+
+# 升级指南
+
+## 从 2.x 升级到 3.0
+
+3.0 用 TypeScript 重写，是一次不兼容升级。
+
+- **不再需要 Python**。`install` 命令和 `~/.cninfo-mcp/venv` 都已废弃，旧目录可以直接删除。最低 Node.js 版本从 18 提高到 22.13。
+- **工具改名并扩充**：
+
+  | 2.x | 3.0 |
+  | --- | --- |
+  | `query_annual_reports_tool` | `list_reports` |
+  | `download_annual_reports_tool` | `download_reports` |
+
+  参数 `stock_code` 改为 `stock`（代码或简称均可），返回结构也有变化；其余六个工具为新增，见[工具与配置参考](tools.md)。`annual-reports-list://` 资源已移除。
+- **下载文件名**由 `代码_简称_标题_<SHA-256>.pdf` 改为 `代码_简称_标题_<公告ID>.pdf`；目标文件已存在时不再重新下载。
+- **修订稿**：标题带“修订”“更正后”等括注的报告全文现在作为 `revised` 返回（此前被排除）。
+- **并发**：服务器自己限速，不再需要调用方控制同时发起的调用数。
+
+## 从 1.4.x 及更早版本升级到 2.0
+
+- 启动器不再自动创建虚拟环境或安装依赖。已有的 `~/.cninfo-mcp/venv` 满足依赖时无需操作，否则先运行一次 `npx -y @youhaozhao/cninfo-mcp install`。
+- 下载位置改为受限的下载根目录，默认从包目录下的 `pdf/` 变为 `~/Downloads/cninfo-mcp`。以前传给保存路径的任意绝对路径会被拒绝，需要改用 `CNINFO_MCP_DOWNLOAD_DIR` 指定根目录。
+- 查询接口改为通过 HTTPS 访问。
